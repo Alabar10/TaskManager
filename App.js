@@ -1,4 +1,18 @@
-import { registerRootComponent } from 'expo';
-import App from './src/App.js'; // Adjust the import if your App component is in a different folder
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import HomePage from "./HomePage"; // Your HomePage component
 
-registerRootComponent(App);
+const Stack = createNativeStackNavigator();
+
+const App = () => {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator initialRouteName="Home">
+        <Stack.Screen name="Home" component={HomePage} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+};
+
+export default App;
