@@ -1,0 +1,7 @@
+node_modules/
+dist/
+build/
+.expo/
+.DS_Store
+.env
+git add app.py
