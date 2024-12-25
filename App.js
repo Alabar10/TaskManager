@@ -6,6 +6,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import HomePage from './src/HomePage/HomePage';  // Your HomePage component
 import Login from './src/LogIn/login';  // Your Login component
 
+
 // Create the drawer and stack navigators
 const Drawer = createDrawerNavigator();
 const Stack = createStackNavigator();
@@ -20,7 +21,7 @@ const StackNavigator = () => {
         options={{
           title: 'Home',
           headerStyle: { 
-            backgroundColor: '#644de9' // Navbar background color
+            backgroundColor: '#64de9' // Navbar background color
           },
           headerTintColor: '#fff', // Navbar text color
         }}

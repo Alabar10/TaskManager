@@ -1,31 +1,50 @@
 // src/LogIn/login.js
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
 import TextWrapper from '../../TextWrapper';
+import { View, TextInput, Button, StyleSheet, Alert } from 'react-native';
+import './login.css';
+
+
 
 const Login = () => {
-  return (
-    <View style={styles.container}>
-      <TextWrapper style={styles.heading}>Login Page</TextWrapper>
-      <TextWrapper style={styles.instructions}>Please enter your credentials</TextWrapper>
-    </View>
-  );
-};
+  const [email,setEmail]=useState('');
+  const [password,setPassword]=useState('');
+   
+  
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  instructions: {
-    fontSize: 18,
-    color: 'gray',
-  },
-});
+
+const handleLogin=()=>{
+  if (email === '' || password === '') {
+    Alert.alert('Error', 'Please fill in both fields.');
+  } else {
+    Alert.alert('Success', `Logged in with email: ${email}`);
+  }
+};
+return (
+  <div className="container">
+    <h1 className="heading">Login Page</h1>
+
+    <input
+      className="input"
+      type="email"
+      placeholder="Email"
+      value={email}
+      onChange={(e) => setEmail(e.target.value)}
+    />
+
+    <input
+      className="input"
+      type="password"
+      placeholder="Password"
+      value={password}
+      onChange={(e) => setPassword(e.target.value)}
+    />
+
+    <button className="button" onClick={handleLogin}>
+      Log In
+    </button>
+  </div>
+);
+};
 
 export default Login;

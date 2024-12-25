@@ -1,0 +1,44 @@
+/* login.css */
+.container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    height: 100vh;
+  }
+  
+  .heading {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+  
+  .instructions {
+    font-size: 18px;
+    color: gray;
+    margin-bottom: 20px;
+  }
+  
+  .input {
+    width: 80%;
+    height: 40px;
+    border: 1px solid gray;
+    margin-bottom: 10px;
+    padding: 0 10px;
+    border-radius: 5px;
+  }
+  
+  .button {
+    background-color: blue;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
+  .button:hover {
+    background-color: darkblue;
+  }
+  
