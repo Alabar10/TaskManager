@@ -1,14 +1,3 @@
-<<<<<<< HEAD
-node_modules/
-dist/
-build/
-.expo/
-.DS_Store
-.env
-git add app.py
-=======
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
 # dependencies
 node_modules/
 
@@ -45,4 +34,3 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
->>>>>>> c6c4f81d36a7b95699cda13abea50b77e5f7715d
