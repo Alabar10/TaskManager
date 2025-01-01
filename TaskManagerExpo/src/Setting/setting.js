@@ -21,7 +21,7 @@ const Settings = ({ route, navigation }) => {
   const fetchUserData = async () => {
     const { userId } = route.params; // Pass userId from navigation
     try {
-      const response = await fetch(`http://172.19.40.86:5000/user/${userId}`);
+      const response = await fetch(`http://192.168.1.42:5000/user/${userId}`);
       const data = await response.json();
       if (response.ok) {
         setUser(data);
@@ -46,7 +46,7 @@ const Settings = ({ route, navigation }) => {
         password: password || undefined, // Include password only if changed
       };
 
-      const response = await fetch("http://172.19.40.86:5000/update_user", {
+      const response = await fetch("http://192.168.1.42:5000/update_user", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedData),
