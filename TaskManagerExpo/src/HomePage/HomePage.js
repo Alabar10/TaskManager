@@ -1,66 +1,83 @@
-// src/HomePage/HomePage.js
-import React from 'react';
-import { View, Text, StyleSheet,TouchableOpacity  } from 'react-native';
-import TopTabs from "../TopTabs";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useNavigation } from "@react-navigation/native";
 
+const HomePage = () => {
+  const [tasks, setTasks] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const navigation = useNavigation();
 
-const HomePage = () => (
-  <View style={styles.container}>
-    {/* Include the TopTabs component at the top */}
-    <TopTabs />
+  const fetchTasks = async () => {
+    try {
+      setIsLoading(true);
+      const userId = await AsyncStorage.getItem("userId");
+      if (!userId) throw new Error("User ID not found");
 
-    {/* Main content of the HomePage */}
-    <View style={styles.content}>
-      <Text style={styles.heading}>Welcome to Task Manager</Text>
-      <Text style={styles.subheading}>Manage your tasks efficiently</Text>
-    </View>
+      const response = await fetch(`http://192.168.1.42:5000/tasks/user/${userId}`);
+      const data = await response.json();
+      setTasks(data);
+    } catch (error) {
+      console.error(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    {/* Floating + Button */}
-    <TouchableOpacity style={styles.floatingButton} onPress={() => console.log("Add Task")}>
-      <MaterialCommunityIcons name="plus" size={30} color="#ffffff" />
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.taskItem}
+      onPress={() => navigation.navigate("TaskDetails", { task: item })}
+    >
+      <Text style={styles.taskTitle}>{item.title}</Text>
     </TouchableOpacity>
-  </View>
-);
+  );
 
-
+  return (
+    <View style={styles.container}>
+      {isLoading ? (
+        <ActivityIndicator size="large" color="#6A5ACD" />
+      ) : (
+        <FlatList
+          data={tasks}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderItem}
+        />
+      )}
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    padding: 16,
+    backgroundColor: "#F5F5F5",
   },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-  subheading: {
-    fontSize: 16,
-    marginTop: 10,
-  },
-  floatingButton: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    backgroundColor: "#6A5ACD", // Customize the button color
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
+  taskItem: {
+    padding: 16,
+    marginVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  taskTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
 

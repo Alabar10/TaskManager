@@ -28,3 +28,4 @@ class Task(db.Model):
 
     def __repr__(self):
         return f"<Task(taskId={self.taskId}, title={self.title}, status={self.status})>"
+

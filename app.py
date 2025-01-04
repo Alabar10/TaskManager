@@ -7,6 +7,9 @@ from werkzeug.security import generate_password_hash
 from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer as Serializer
 from flask import Flask, jsonify, request, session, url_for
+import logging
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+
 
 
 app = Flask(__name__)
@@ -23,13 +26,23 @@ mail = Mail(app)
 
 
 # Enable CORS for all routes
-CORS(app, resources={r"/*": {"origins": "*"}})  # This line allows all domains
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:8081"}})
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = 'http://localhost:8081'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+
 
 # Database configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mssql+pyodbc://database:task1234!@takmanager.database.windows.net:1433/TaskManager?driver=ODBC+Driver+17+for+SQL+Server'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # Disable modification tracking
+app.config['SQLALCHEMY_ECHO'] = True
 db = SQLAlchemy(app)
-
+CORS(app, supports_credentials=True)
+jwt = JWTManager(app)
 
 def generate_token(email):
     serializer = Serializer(app.config['SECRET_KEY'], salt='password-reset-salt')
@@ -71,6 +84,42 @@ class User(db.Model):
     email = db.Column(db.String(50), unique=True, nullable=False)  # Unique email
     fname = db.Column(db.String(50), nullable=False)  # First name
     lname = db.Column(db.String(50), nullable=False)  # Last name
+
+
+PRIORITY_CHOICES = {
+    1: "Important and urgent",
+    2: "Important but not urgent",
+    3: "Not important but urgent",
+    4: "Not important and not urgent",
+}
+
+class PersonalTask(db.Model):
+    __tablename__ = 'PersonalTasks'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    due_date = db.Column(db.DateTime)
+    deadline = db.Column(db.DateTime)
+    priority = db.Column(db.Integer, nullable=False)  # Values 1-4 only
+    status = db.Column(db.String(50))
+    user_id = db.Column(db.Integer, db.ForeignKey('Users.userId'))
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "due_date": self.due_date.strftime("%Y-%m-%d %H:%M:%S") if self.due_date else None,
+            "deadline": self.deadline.strftime("%Y-%m-%d %H:%M:%S") if self.deadline else None,
+            "priority": PRIORITY_CHOICES.get(self.priority, "Unknown"),
+            "status": self.status,
+            "user_id": self.user_id,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+        }
+
 
 
 
@@ -256,17 +305,6 @@ def change_password():
         return jsonify({"message": f"Failed to update password: {str(e)}"}), 500
 
 
-@app.route('/tasks', methods=['GET'])
-def get_tasks():
-    """
-    Return a list of tasks (example endpoint).
-    """
-    tasks = [
-        {"id": 1, "title": "Task 1"},
-        {"id": 2, "title": "Task 2"},
-        {"id": 3, "title": "Task 3"},
-    ]
-    return jsonify({"tasks": tasks})
 
 
 
@@ -326,6 +364,49 @@ def request_reset():
         return jsonify({'message': 'Password reset link sent to your email'}), 200
     except Exception as e:
         return jsonify({'message': f'Failed to send email: {str(e)}'}), 500
+
+
+
+@app.route('/tasks', methods=['POST'])
+def create_task():
+    data = request.get_json()
+    
+    if not data or not data.get('title'):
+        return jsonify({'message': 'Title is required'}), 400
+    
+    new_task = PersonalTask(
+        title=data['title'],
+        description=data.get('description'),
+        due_date=data.get('due_date'),
+        deadline=data.get('deadline'),
+        priority=data.get('priority'),
+        status=data.get('status'),
+        user_id=data.get('user_id')
+    )
+    
+    db.session.add(new_task)
+    try:
+        db.session.commit()
+        return jsonify(new_task.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': 'Unable to create task', 'error': str(e)}), 500
+
+
+
+@app.route('/tasks/user/<int:user_id>', methods=['GET'])
+def get_user_tasks(user_id):
+    try:
+        print(f"Fetching tasks for user ID: {user_id}")  # Debugging log
+        tasks = PersonalTask.query.filter_by(user_id=user_id).all()
+        if not tasks:
+            return jsonify({"message": "No tasks found for this user."}), 404
+        task_list = [task.to_dict() for task in tasks]
+        return jsonify(task_list), 200
+    except Exception as e:
+        print(f"Error fetching tasks for user {user_id}: {e}")  # Debugging log
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
 
 
 

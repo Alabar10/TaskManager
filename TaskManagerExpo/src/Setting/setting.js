@@ -8,66 +8,81 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons'; // For icons
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const Settings = ({ route, navigation }) => {
-  const [user, setUser] = useState(null);
-  const [password, setPassword] = useState(""); // Password state
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false); // Toggle password visibility
+const Settings = ({ navigation }) => {
+  const [userId, setUserId] = useState(null);
+  const [user, setUser] = useState({ fname: '', lname: '', email: '', password: '' });
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false);
 
-  // Fetch user data on component mount
   const fetchUserData = async () => {
-    const { userId } = route.params; // Pass userId from navigation
+    console.log('Attempting to fetch data for user ID:', userId);
+    if (!userId) {
+      console.log('User ID not available, skipping fetch.');
+      setIsLoading(false);
+      return;
+    }
     try {
-      const response = await fetch(`http://192.168.1.42:5000/user/${userId}`);
+      const response = await fetch(`http://192.168.1.159:5000/user/${userId}`);
       const data = await response.json();
+      console.log("Fetch response:", response);
+      console.log("Data received:", data);
       if (response.ok) {
         setUser(data);
-        setPassword(data.password || ''); // Initialize with the current password
+        console.log("User set with data:", data);
       } else {
         Alert.alert('Error', data.message || 'Failed to fetch user data.');
       }
     } catch (error) {
       Alert.alert('Error', 'Unable to fetch user data.');
+      console.error('Fetch Error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Update user information
-  const handleUpdateInfo = async () => {
-    setIsUpdating(true);
-    try {
-      const updatedData = {
-        ...user,
-        userId: user.userId,
-        password: password || undefined, // Include password only if changed
-      };
+  useEffect(() => {
+    const getUserIdFromStorage = async () => {
+      const storedUserId = await AsyncStorage.getItem('userId');
+      console.log('Retrieved User ID from AsyncStorage:', storedUserId);
+      setUserId(storedUserId);
+    };
 
-      const response = await fetch("http://192.168.1.42:5000/update_user", {
+    getUserIdFromStorage();
+  }, []);
+
+  useEffect(() => {
+    if (userId) {
+      fetchUserData();
+    }
+  }, [userId]);
+
+  const handleUpdateInfo = async () => {
+    if (!user) {
+      Alert.alert("Error", "No user data to update.");
+      return;
+    }
+
+    try {
+      const updatedData = { ...user, password: user.password || undefined };
+      const response = await fetch("http://192.168.1.159:5000/update_user", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedData),
       });
-
-      const data = await response.json();
+      const result = await response.json();
       if (response.ok) {
         Alert.alert("Success", "User information updated successfully.");
       } else {
-        Alert.alert("Error", data.message || "Failed to update user information.");
+        Alert.alert("Error", result.message || "Failed to update user information.");
       }
     } catch (error) {
       Alert.alert("Error", "Unable to update user information.");
-    } finally {
-      setIsUpdating(false);
+      console.error('Update Error:', error);
     }
   };
-
-  useEffect(() => {
-    fetchUserData();
-  }, []);
 
   if (isLoading) {
     return <ActivityIndicator size="large" color="#0000ff" />;
@@ -76,33 +91,31 @@ const Settings = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>User Settings</Text>
-
       <TextInput
         style={styles.input}
         placeholder="First Name"
-        value={user?.fname}
-        onChangeText={(text) => setUser({ ...user, fname: text })}
+        value={user.fname || ''}
+        onChangeText={(text) => setUser((prev) => ({ ...prev, fname: text }))}
       />
       <TextInput
         style={styles.input}
         placeholder="Last Name"
-        value={user?.lname}
-        onChangeText={(text) => setUser({ ...user, lname: text })}
+        value={user.lname || ''}
+        onChangeText={(text) => setUser((prev) => ({ ...prev, lname: text }))}
       />
       <TextInput
         style={styles.input}
         placeholder="Email"
-        value={user?.email}
-        onChangeText={(text) => setUser({ ...user, email: text })}
+        value={user.email || ''}
+        onChangeText={(text) => setUser((prev) => ({ ...prev, email: text }))}
         keyboardType="email-address"
       />
-
       <View style={styles.passwordContainer}>
         <TextInput
           style={[styles.input, { flex: 1 }]}
           placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
+          value={user.password || ''}
+          onChangeText={(text) => setUser((prev) => ({ ...prev, password: text }))}
           secureTextEntry={!isPasswordVisible}
         />
         <TouchableOpacity
@@ -116,14 +129,9 @@ const Settings = ({ route, navigation }) => {
           />
         </TouchableOpacity>
       </View>
-
-      {isUpdating ? (
-        <ActivityIndicator size="large" color="#0000ff" />
-      ) : (
-        <TouchableOpacity style={styles.button} onPress={handleUpdateInfo}>
-          <Text style={styles.buttonText}>Save Changes</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity style={styles.button} onPress={handleUpdateInfo}>
+        <Text style={styles.buttonText}>Save Changes</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -148,8 +156,9 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     paddingHorizontal: 10,
     marginBottom: 10,
-    fontSize: 14,
+    fontSize: 15,
     backgroundColor: '#fff',
+    color: '#000',
   },
   passwordContainer: {
     flexDirection: 'row',
@@ -161,7 +170,7 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: '#6A5ACD',
-    padding: 12,
+    paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },

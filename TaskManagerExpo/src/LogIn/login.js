@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
-import {View,Text,TextInput,StyleSheet,TouchableOpacity,Alert,ActivityIndicator,} from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons'; // For icons
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const Login = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false); // State to toggle password visibility
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleLogin = async () => {
@@ -27,17 +36,17 @@ const Login = ({ navigation }) => {
         body: JSON.stringify({ email, password }),
       });
 
-      console.log('Debug: Server response:', response);
       const data = await response.json();
       console.log('Debug: Response JSON:', data);
 
       setIsLoading(false);
 
       if (response.ok) {
+        await AsyncStorage.setItem('userId', String(data.userId)); // Store userId in AsyncStorage
         Alert.alert('Success', `Welcome, ${data.username}`);
-        navigation.replace('DrawerNavigator', { userId: data.userId });
+        navigation.replace('DrawerNavigator'); // Navigate to DrawerNavigator
       } else if (response.status === 401) {
-        setErrorMessage('Invalid email or password.'); // Show error for invalid credentials
+        setErrorMessage('Invalid email or password.');
       } else {
         Alert.alert('Error', data.message || 'Unexpected error occurred.');
       }
@@ -51,19 +60,16 @@ const Login = ({ navigation }) => {
     }
   };
 
-  
-  
-
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Login</Text>
 
-      {/* Username input */}
+      {/* Email Input */}
       <View style={styles.inputContainer}>
         <MaterialCommunityIcons name="account" size={20} color="#666" style={styles.icon} />
         <TextInput
           style={styles.input}
-          placeholder="Type your username"
+          placeholder="Type your email"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -71,7 +77,7 @@ const Login = ({ navigation }) => {
         />
       </View>
 
-      {/* Password input */}
+      {/* Password Input */}
       <View style={styles.inputContainer}>
         <MaterialCommunityIcons name="lock" size={20} color="#666" style={styles.icon} />
         <TextInput
@@ -79,11 +85,11 @@ const Login = ({ navigation }) => {
           placeholder="Type your password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry={!showPassword} // Toggle password visibility
+          secureTextEntry={!showPassword}
         />
         <TouchableOpacity
           style={styles.showPasswordButton}
-          onPress={() => setShowPassword((prevState) => !prevState)} // Toggle password visibility
+          onPress={() => setShowPassword((prevState) => !prevState)}
         >
           <MaterialCommunityIcons
             name={showPassword ? 'eye' : 'eye-off'}
@@ -93,25 +99,22 @@ const Login = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
+      {/* Error Message */}
+      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
       {/* Forgot Password */}
       <TouchableOpacity onPress={() => navigation.navigate('ResetEmail')}>
         <Text style={styles.forgotPassword}>Forgot password?</Text>
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
       </TouchableOpacity>
-
-
 
       {/* Login Button */}
       {isLoading ? (
-      <ActivityIndicator size="large" color="#0000ff" />
+        <ActivityIndicator size="large" color="#0000ff" />
       ) : (
-      <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-        <Text style={styles.loginButtonText}>LOGIN</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+          <Text style={styles.loginButtonText}>LOGIN</Text>
+        </TouchableOpacity>
       )}
-
-
 
       {/* Register Link */}
       <View style={styles.registerContainer}>
