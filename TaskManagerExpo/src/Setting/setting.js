@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import config from '../config'; // Adjust the path based on your file structure
 
 const Settings = ({ navigation }) => {
   const [userId, setUserId] = useState(null);
@@ -24,8 +25,10 @@ const Settings = ({ navigation }) => {
       setIsLoading(false);
       return;
     }
+    console.log('API URL:', config.API_URL); // Debugging the API URL
+
     try {
-      const response = await fetch(`http://192.168.1.159:5000/user/${userId}`);
+      const response = await fetch(`${config.API_URL}/user/${userId}`);
       const data = await response.json();
       console.log("Fetch response:", response);
       console.log("Data received:", data);
@@ -67,7 +70,7 @@ const Settings = ({ navigation }) => {
 
     try {
       const updatedData = { ...user, password: user.password || undefined };
-      const response = await fetch("http://192.168.1.159:5000/update_user", {
+      const response = await fetch("http://127.0.0.1:5000/update_user", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedData),
@@ -115,6 +118,8 @@ const Settings = ({ navigation }) => {
           style={[styles.input, { flex: 1 }]}
           placeholder="Password"
           value={user.password || ''}
+          placeholderTextColor="gray" // Makes the placeholder visible
+
           onChangeText={(text) => setUser((prev) => ({ ...prev, password: text }))}
           secureTextEntry={!isPasswordVisible}
         />

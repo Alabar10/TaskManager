@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  ScrollView,
-  Platform,
-} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView,Modal } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+import config from '../config'; // Adjust the path based on your file structure
+
+const priorityMap = {
+  'Important and Urgent': 1,
+  'Important but Not Urgent': 2,
+  'Not Important but Urgent': 3,
+  'Not Important and Not Urgent': 4,
+};
+const priorityOptions = Object.keys(priorityMap);
 
 const AddTask = ({ navigation }) => {
   const [title, setTitle] = useState('');
@@ -23,128 +23,212 @@ const AddTask = ({ navigation }) => {
   const [priority, setPriority] = useState('');
   const [status, setStatus] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [date, setDate] = useState(new Date());
   const [dateField, setDateField] = useState('');
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+
 
   const handleDateChange = (event, selectedDate) => {
-    const currentDate = selectedDate || date;
-    setShowDatePicker(Platform.OS === 'ios');
-    setDate(currentDate);
-    if (dateField === 'dueDate') {
-      setDueDate(currentDate.toISOString().split('T')[0]);
-    } else if (dateField === 'deadline') {
-      setDeadline(currentDate.toISOString().split('T')[0]);
+    if (event.type === "set" && selectedDate) {
+      if (dateField === "dueDate") {
+        setDueDate(selectedDate); // Temporarily store the date
+        setShowTimePicker(true); // Show the time picker after date selection
+      } else if (dateField === "deadline") {
+        setDeadline(selectedDate); // Temporarily store the date
+        setShowTimePicker(true); // Show the time picker after date selection
+      }
     }
+    setShowDatePicker(false); // Close the date picker
   };
-
+  
+  const handleTimeChange = (event, selectedTime) => {
+    if (event.type === "set" && selectedTime) {
+      if (dateField === "dueDate") {
+        const updatedDate = new Date(dueDate);
+        updatedDate.setHours(selectedTime.getHours());
+        updatedDate.setMinutes(selectedTime.getMinutes());
+        setDueDate(updatedDate); // Update due date with time
+      } else if (dateField === "deadline") {
+        const updatedDate = new Date(deadline);
+        updatedDate.setHours(selectedTime.getHours());
+        updatedDate.setMinutes(selectedTime.getMinutes());
+        setDeadline(updatedDate); // Update deadline with time
+      }
+    }
+    setShowTimePicker(false); // Close the time picker
+    setDateField(null); // Reset the current field
+  };
+  
   const showDatepicker = (field) => {
     setDateField(field);
     setShowDatePicker(true);
   };
 
-  const validateFields = () => {
+  const handleCreateTask = async () => {
     if (!title || !description || !dueDate || !deadline || !priority || !status) {
       Alert.alert('Error', 'All fields are required.');
-      return false;
+      return;
     }
-    return true;
-  };
+  
+    const priorityNumber = priorityMap[priority];
+    if (!priorityNumber) {
+      Alert.alert('Error', 'Invalid priority selected.');
+      return;
+    }
+    console.log('API URL:', config.API_URL); // Debugging the API URL
 
-  const handleCreateTask = async () => {
-    if (!validateFields()) return;
-
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       const userId = await AsyncStorage.getItem('userId');
-      if (!userId) {
-        Alert.alert('Error', 'User not authenticated. Please log in again.');
-        setIsLoading(false);
-        return;
-      }
-
-      const response = await axios.post('http://192.168.1.159:5000/tasks', {
+      const response = await axios.post('${config.API_URL}/tasks', {
         title,
         description,
         due_date: dueDate,
         deadline,
-        priority: parseInt(priority, 10),
+        priority: priorityNumber,
         status,
-        user_id: parseInt(userId, 10),
+        user_id: userId,
       });
-
+  
       Alert.alert('Success', 'Task created successfully!');
-      navigation.navigate('HomePage'); // Navigate to homepage
+      navigation.goBack();
     } catch (error) {
-      if (error.response) {
-        Alert.alert('Error', error.response.data.message || 'Failed to create task.');
-      } else {
-        Alert.alert('Error', 'Failed to connect to the server.');
-      }
+      Alert.alert('Error', error.response?.data.message || 'Failed to create task.');
     } finally {
       setIsLoading(false);
     }
   };
+  
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer}>
       <View style={styles.container}>
-        {/* Back Arrow */}
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" style={styles.backIcon}  />
+          <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
         </TouchableOpacity>
-
         <Text style={styles.heading}>Create a New Task</Text>
-
         <TextInput
           style={styles.input}
           placeholder="Task Title"
+          placeholderTextColor="gray" // Makes the placeholder visible
+
           value={title}
           onChangeText={setTitle}
         />
         <TextInput
           style={styles.input}
           placeholder="Task Description"
+          placeholderTextColor="gray" // Makes the placeholder visible
+
           value={description}
           onChangeText={setDescription}
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Due Date (YYYY-MM-DD)"
-          value={dueDate}
-          onFocus={() => showDatepicker('dueDate')}
-          editable={false}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Deadline (YYYY-MM-DD)"
-          value={deadline}
-          onFocus={() => showDatepicker('deadline')}
-          editable={false}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Priority (1, 2, 3, ...)"
-          value={priority}
-          onChangeText={setPriority}
-          keyboardType="numeric"
-        />
+       {/* Due Date Input */}
+<View>
+  <TouchableOpacity
+    style={[styles.input, styles.dateInput]}
+    onPress={() => showDatepicker('dueDate')}
+  >
+    <Text style={{ color: dueDate ? 'black' : 'gray' }}>
+      {dueDate
+        ? `${new Date(dueDate).toLocaleDateString()} ${new Date(dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        : 'Select Due Date'}
+    </Text>
+  </TouchableOpacity>
+  {dateField === 'dueDate' && showDatePicker && (
+    <DateTimePicker
+      value={dueDate ? new Date(dueDate) : new Date()}
+      mode="date"
+      display="default"
+      onChange={handleDateChange}
+    />
+  )}
+  {dateField === 'dueDate' && showTimePicker && (
+    <DateTimePicker
+      value={dueDate ? new Date(dueDate) : new Date()}
+      mode="time"
+      display="default"
+      onChange={handleTimeChange}
+    />
+  )}
+</View>
+
+{/* Deadline Input */}
+<View>
+  <TouchableOpacity
+    style={[styles.input, styles.dateInput]}
+    onPress={() => showDatepicker('deadline')}
+  >
+    <Text style={{ color: deadline ? 'black' : 'gray' }}>
+      {deadline
+        ? `${new Date(deadline).toLocaleDateString()} ${new Date(deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        : 'Select Deadline'}
+    </Text>
+  </TouchableOpacity>
+  {dateField === 'deadline' && showDatePicker && (
+    <DateTimePicker
+      value={deadline ? new Date(deadline) : new Date()}
+      mode="date"
+      display="default"
+      onChange={handleDateChange}
+    />
+  )}
+  {dateField === 'deadline' && showTimePicker && (
+    <DateTimePicker
+      value={deadline ? new Date(deadline) : new Date()}
+      mode="time"
+      display="default"
+      onChange={handleTimeChange}
+    />
+  )}
+</View>
+
+       {/* Priority Dropdown */}
+       <TouchableOpacity
+  style={[styles.input, styles.dateInput]}
+  onPress={() => setShowPriorityDropdown(true)}
+>
+  <Text style={{ color: priority ? 'black' : 'gray' }}>
+    {priority || 'Select Priority'}
+  </Text>
+</TouchableOpacity>
+<Modal
+  visible={showPriorityDropdown}
+  transparent={true}
+  animationType="slide"
+  onRequestClose={() => setShowPriorityDropdown(false)}
+>
+  <View style={styles.modalContainer}>
+    <View style={styles.modalContent}>
+      <Text style={styles.modalTitle}>Select Priority</Text>
+      {priorityOptions.map((option, index) => (
+        <TouchableOpacity
+          key={index}
+          style={styles.option}
+          onPress={() => {
+            setPriority(option);
+            setShowPriorityDropdown(false);
+          }}
+        >
+          <Text style={styles.optionText}>{option}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  </View>
+</Modal>
+
+
         <TextInput
           style={styles.input}
           placeholder="Status (e.g., Pending, Completed)"
           value={status}
           onChangeText={setStatus}
+          placeholderTextColor="gray" // Makes the placeholder visible
+
         />
-
-        {showDatePicker && (
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-          />
-        )}
-
+       
         {isLoading ? (
           <ActivityIndicator size="large" color="#6A5ACD" />
         ) : (
@@ -152,8 +236,6 @@ const AddTask = ({ navigation }) => {
             <Text style={styles.buttonText}>Create Task</Text>
           </TouchableOpacity>
         )}
-
-        
       </View>
     </ScrollView>
   );
@@ -171,31 +253,25 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: 'absolute',
-    top: 20,
+    top: 30,
     left: 10,
-    zIndex: 1,
-    padding: 15, // Padding for circular size
-    backgroundColor: '#6A5ACD', // Updated color to SlateBlue
-    borderRadius: 25, // Circular button
+    padding: 10,
+    backgroundColor: '#6A5ACD',
+    borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000', // Optional shadow
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 2,
-    elevation: 5, // Shadow for Android
+    elevation: 5,
   },
-  backIcon: {
-    fontSize: 26, // Icon size
-    color: '#fff', // White icon color
-  },
-  
   heading: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
-    marginTop: 50,
+    marginTop: 60,
   },
   input: {
     borderWidth: 1,
@@ -205,6 +281,9 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     fontSize: 16,
   },
+  dateInput: {
+    justifyContent: 'center',
+  },
   button: {
     backgroundColor: '#6A5ACD',
     paddingVertical: 15,
@@ -213,15 +292,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 20,
   },
-  homeButton: {
-    marginTop: 10,
-    backgroundColor: '#3CB371',
-  },
   buttonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
   },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  option: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#333',
+  },
 });
+
 
 export default AddTask;

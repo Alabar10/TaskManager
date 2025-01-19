@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import config from '../config'; // Adjust the path based on your file structure
 
 const Register = ({ navigation }) => {
   const [username, setUsername] = useState('');
@@ -60,9 +61,10 @@ const Register = ({ navigation }) => {
     }
 
     setIsLoading(true);
+    console.log('API URL:', config.API_URL); // Debugging the API URL
 
     try {
-      const response = await fetch('http://192.168.1.42:5000/register', {
+      const response = await fetch('${config.API_URL}/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

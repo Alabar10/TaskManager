@@ -21,6 +21,11 @@ import HomePage from "./src/HomePage/HomePage";
 import LoginScreen from "./src/LogIn/login";
 import AddTask from "./src/AddTask/addtask";
 import TaskDetailsScreen from "./src/HomePage/TaskDetailsScreen";
+import GroupTasksScreen from './src/GroupTask/GroupTasksScreen';  
+import AddGroupTask from "./src/AddTask/addgrouptask";
+import Addgroup from "./src/AddTask/addgroup";
+import AddUserToGroup from './src/GroupTask/AddUserToGroup';  
+
 
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
@@ -122,6 +127,14 @@ const App = () => (
             <Stack.Screen name="ResetPassword" component={ResetPassword} />
             <Stack.Screen name="AddTask" component={AddTask} />
             <Stack.Screen name="TaskDetails" component={TaskDetailsScreen} />
+<<<<<<< HEAD
+            <Stack.Screen name="GroupTasks" component={GroupTasksScreen} />
+            <Stack.Screen name="AddGroupTask" component={AddGroupTask} />
+            <Stack.Screen name="Addgroup" component={Addgroup} />
+            <Stack.Screen name="AddUserToGroup" component={AddUserToGroup} />
+
+=======
+>>>>>>> a31f57b6d975d2b524c78a9c2598e65b2b4ef1d7
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>
