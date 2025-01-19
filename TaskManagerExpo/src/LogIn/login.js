@@ -30,7 +30,11 @@ const Login = ({ navigation }) => {
     console.log('API URL:', config.API_URL); // Debugging the API URL
   
     try {
+<<<<<<< HEAD
       const response = await fetch(`${config.API_URL}/login`, {
+=======
+      const response = await fetch('http://192.168.1.191:5000/login', {
+>>>>>>> a31f57b6d975d2b524c78a9c2598e65b2b4ef1d7
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
