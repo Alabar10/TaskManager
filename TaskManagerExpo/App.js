@@ -127,14 +127,11 @@ const App = () => (
             <Stack.Screen name="ResetPassword" component={ResetPassword} />
             <Stack.Screen name="AddTask" component={AddTask} />
             <Stack.Screen name="TaskDetails" component={TaskDetailsScreen} />
-<<<<<<< HEAD
             <Stack.Screen name="GroupTasks" component={GroupTasksScreen} />
             <Stack.Screen name="AddGroupTask" component={AddGroupTask} />
             <Stack.Screen name="Addgroup" component={Addgroup} />
             <Stack.Screen name="AddUserToGroup" component={AddUserToGroup} />
 
-=======
->>>>>>> a31f57b6d975d2b524c78a9c2598e65b2b4ef1d7
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>

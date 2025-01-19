@@ -22,7 +22,6 @@ const HomePage = () => {
     }
     console.log('API URL:', config.API_URL); // Debugging the API URL
 
-<<<<<<< HEAD
     try {
       let response;
       if (selectedTab === "Group") {
@@ -42,11 +41,6 @@ const HomePage = () => {
         setItems(personalTasks);
         console.log("Personal Tasks:", personalTasks); // Debugging line to inspect personal tasks
       }
-=======
-      const response = await fetch(`http://192.168.1.191:5000/tasks/user/${userId}`);
-      const data = await response.json();
-      setTasks(data);
->>>>>>> a31f57b6d975d2b524c78a9c2598e65b2b4ef1d7
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {

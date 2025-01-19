@@ -287,19 +287,25 @@ def register_routes(app):
 
 
 
+    @app.route('/tasks/dates', methods=['GET'])
+    def get_tasks_by_date_range():
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        if not start_date or not end_date:
+            return jsonify({"message": "Missing start_date or end_date parameters"}), 400
+
+        try:
+            tasks = PersonalTask.query.filter(PersonalTask.due_date.between(start_date, end_date)).all()
+            task_list = [task.to_dict() for task in tasks]
+            return jsonify(task_list), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
 
-@app.route('/tasks/dates', methods=['GET'])
-def get_tasks_by_date_range():
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
 
-<<<<<<< HEAD
+
     
-
-    
-
-
     @app.route('/tasks', methods=['POST'])
     def create_task():
         data = request.get_json()
@@ -597,17 +603,7 @@ def get_tasks_by_date_range():
         except Exception as e:
             db.session.rollback()
             return jsonify({"message": "Failed to create task", "error": str(e)}), 500
-=======
-    if not start_date or not end_date:
-        return jsonify({"message": "Start and end dates are required"}), 400
->>>>>>> a31f57b6d975d2b524c78a9c2598e65b2b4ef1d7
 
-    try:
-        tasks = PersonalTask.query.filter(PersonalTask.due_date.between(start_date, end_date)).all()
-        task_list = [task.to_dict() for task in tasks]
-        return jsonify(task_list), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 # ==================================================== Main ========================================================== #
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
