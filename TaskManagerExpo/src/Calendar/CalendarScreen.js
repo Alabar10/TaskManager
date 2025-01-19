@@ -10,10 +10,29 @@ const CalendarScreen = () => {
   useEffect(() => {
     const fetchTasks = async () => {
       try {
-        const response = await fetch('http://localhost:5000/tasks/dates?start_date=2025-01-01&end_date=2025-01-31');
+        // שליפת ה-token מה-localStorage
+        const token = localStorage.getItem('auth_token');
+        const userId = localStorage.getItem('user_id'); // שליפת user_id מה-localStorage
+        if (!token || !userId) {
+          console.error('Auth token or user_id is missing. Please log in.');
+          return;
+        }
+
+        // בקשת API עם token ו-user_id
+        const response = await fetch(
+          `http://localhost:5000/tasks/dates?start_date=2025-01-01&end_date=2025-01-31&user_id=${userId}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`, // הוספת token ל-Header
+            },
+          }
+        );
+
         if (!response.ok) {
           throw new Error('Failed to fetch tasks');
         }
+
         const data = await response.json();
         // המרת המשימות לפורמט שמתאים ל-FullCalendar
         const formattedEvents = data.map((task) => ({
