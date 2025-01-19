@@ -70,7 +70,7 @@ const TabNavigator = () => (
       tabBarIcon: ({ color, size }) => {
         let iconName;
         if (route.name === "Home") iconName = "home";
-        else if (route.name === "Wallet") iconName = "wallet";
+        else if (route.name === "Calendar") iconName = "calendar-today";
         else if (route.name === "Analytics") iconName = "chart-line";
         else if (route.name === "Settings") iconName = "cog";
 
@@ -92,7 +92,7 @@ const TabNavigator = () => (
     })}
   >
     <Tab.Screen name="Home" component={HomePage} />
-    <Tab.Screen name="Wallet" component={WalletScreen} />
+    <Tab.Screen name="Calendar" component={require("./src/Calendar/CalendarScreen").default} />
     <Tab.Screen name="Analytics" component={AnalyticsScreen} />
     <Tab.Screen name="Settings" component={Settings} />
   </Tab.Navigator>
@@ -122,7 +122,6 @@ const App = () => (
             <Stack.Screen name="ResetPassword" component={ResetPassword} />
             <Stack.Screen name="AddTask" component={AddTask} />
             <Stack.Screen name="TaskDetails" component={TaskDetailsScreen} />
-
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>
@@ -131,12 +130,6 @@ const App = () => (
 );
 
 // Placeholder Screens
-const WalletScreen = () => (
-  <View style={styles.screenContainer}>
-    <Text>Wallet Screen</Text>
-  </View>
-);
-
 const AnalyticsScreen = () => (
   <View style={styles.screenContainer}>
     <Text>Analytics Screen</Text>

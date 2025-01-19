@@ -28,7 +28,7 @@ const Login = ({ navigation }) => {
     console.log('Debug: Sending login request with:', { email, password });
 
     try {
-      const response = await fetch('http://192.168.1.42:5000/login', {
+      const response = await fetch('http://192.168.1.191:5000/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

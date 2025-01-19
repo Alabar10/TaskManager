@@ -21,7 +21,7 @@ const HomePage = () => {
       const userId = await AsyncStorage.getItem("userId");
       if (!userId) throw new Error("User ID not found");
 
-      const response = await fetch(`http://192.168.1.42:5000/tasks/user/${userId}`);
+      const response = await fetch(`http://192.168.1.191:5000/tasks/user/${userId}`);
       const data = await response.json();
       setTasks(data);
     } catch (error) {

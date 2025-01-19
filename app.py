@@ -408,7 +408,20 @@ def get_user_tasks(user_id):
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
 
+@app.route('/tasks/dates', methods=['GET'])
+def get_tasks_by_date_range():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
 
+    if not start_date or not end_date:
+        return jsonify({"message": "Start and end dates are required"}), 400
+
+    try:
+        tasks = PersonalTask.query.filter(PersonalTask.due_date.between(start_date, end_date)).all()
+        task_list = [task.to_dict() for task in tasks]
+        return jsonify(task_list), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ==================================================== Main ========================================================== #
