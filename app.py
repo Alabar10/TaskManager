@@ -303,23 +303,17 @@ def register_routes(app):
             return jsonify({"error": str(e)}), 500
 
 
-<<<<<<< HEAD
 
-=======
-@app.route('/tasks/dates', methods=['GET'])
-@jwt_required()  # דרישה ל-JWT
-def get_tasks_by_date_range():
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    user_id = request.args.get('user_id')  # קבלת user_id מהבקשה
+    @app.route('/tasks/dates', methods=['GET'])
+    @jwt_required()  # דרישה ל-JWT
+    def get_tasks_by_date_range():
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        user_id = request.args.get('user_id')  # קבלת user_id מהבקשה
 
-<<<<<<< HEAD
-    if not start_date or not end_date or not user_id:
-        return jsonify({"message": "Start date, end date, and user_id are required"}), 400
-=======
-<<<<<<< HEAD
+        if not start_date or not end_date or not user_id:
+            return jsonify({"message": "Start date, end date, and user_id are required"}), 400
     
->>>>>>> c12ce2e7039da73883b52ba7f6049221488f105a
 
     
     @app.route('/tasks', methods=['POST'])
@@ -619,26 +613,28 @@ def get_tasks_by_date_range():
         except Exception as e:
             db.session.rollback()
             return jsonify({"message": "Failed to create task", "error": str(e)}), 500
-<<<<<<< HEAD
 
-=======
-=======
-    if not start_date or not end_date:
-        return jsonify({"message": "Start and end dates are required"}), 400
->>>>>>> a31f57b6d975d2b524c78a9c2598e65b2b4ef1d7
->>>>>>> 8c728abeb4d7eb0d2e26ebb97b50879cd2286be9
+    @app.route('/tasks/dates', methods=['GET'])
+    @jwt_required()  # Require JWT for authentication
+    def get_tasks_by_date_range():
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        user_id = get_jwt_identity()  # Get the user ID from the JWT token
 
-    try:
-        # אימות זהות המשתמש המחובר
-        tasks = PersonalTask.query.filter(
-            PersonalTask.user_id == int(user_id),  # סינון לפי user_id
-            PersonalTask.due_date.between(start_date, end_date)
-        ).all()
-        task_list = [task.to_dict() for task in tasks]
-        return jsonify(task_list), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
->>>>>>> c12ce2e7039da73883b52ba7f6049221488f105a
+        if not start_date or not end_date:
+            return jsonify({"message": "Start and end dates are required"}), 400
+
+        try:
+            # Authenticate the connected user and filter tasks by date range
+            tasks = PersonalTask.query.filter(
+                PersonalTask.user_id == user_id,  # Filter by user_id
+                PersonalTask.due_date.between(start_date, end_date)
+            ).all()
+            task_list = [task.to_dict() for task in tasks]  # Convert tasks to dictionary format for JSON response
+            return jsonify(task_list), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
 
 
 
