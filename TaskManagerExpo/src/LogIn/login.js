@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import config from '../config'; // Adjust the path based on your file structure
 
 const Login = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -23,28 +24,38 @@ const Login = ({ navigation }) => {
       Alert.alert('Error', 'Please fill in both fields.');
       return;
     }
-
+  
     setIsLoading(true);
     console.log('Debug: Sending login request with:', { email, password });
-
+    console.log('API URL:', config.API_URL); // Debugging the API URL
+  
     try {
-      const response = await fetch('http://192.168.1.42:5000/login', {
+      const response = await fetch(`${config.API_URL}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
       });
-
+  
       const data = await response.json();
       console.log('Debug: Response JSON:', data);
-
+  
       setIsLoading(false);
-
+  
       if (response.ok) {
-        await AsyncStorage.setItem('userId', String(data.userId)); // Store userId in AsyncStorage
-        Alert.alert('Success', `Welcome, ${data.username}`);
-        navigation.replace('DrawerNavigator'); // Navigate to DrawerNavigator
+        // Check if the token is available in the response
+        if (data.token) {
+          // Store the token in AsyncStorage
+          await AsyncStorage.setItem('userToken', data.token);  // Store the JWT token
+          // Optionally store userId if needed
+          await AsyncStorage.setItem('userId', String(data.userId));
+  
+          Alert.alert('Success', `Welcome, ${data.username}`);
+          navigation.replace('DrawerNavigator'); // Navigate to DrawerNavigator
+        } else {
+          Alert.alert('Error', 'No token returned from the server.');
+        }
       } else if (response.status === 401) {
         setErrorMessage('Invalid email or password.');
       } else {
@@ -60,6 +71,17 @@ const Login = ({ navigation }) => {
     }
   };
 
+  // Clear error message if the user starts typing again
+  const handleEmailChange = (text) => {
+    setEmail(text);
+    setErrorMessage('');
+  };
+
+  const handlePasswordChange = (text) => {
+    setPassword(text);
+    setErrorMessage('');
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Login</Text>
@@ -71,7 +93,7 @@ const Login = ({ navigation }) => {
           style={styles.input}
           placeholder="Type your email"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={handleEmailChange}
           keyboardType="email-address"
           autoCapitalize="none"
         />
@@ -84,7 +106,7 @@ const Login = ({ navigation }) => {
           style={styles.input}
           placeholder="Type your password"
           value={password}
-          onChangeText={setPassword}
+          onChangeText={handlePasswordChange}
           secureTextEntry={!showPassword}
         />
         <TouchableOpacity
