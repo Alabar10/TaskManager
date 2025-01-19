@@ -423,7 +423,6 @@ def get_tasks_by_date_range():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # ==================================================== Main ========================================================== #
 
 if __name__ == '__main__':
