@@ -44,11 +44,18 @@ const Login = ({ navigation }) => {
       setIsLoading(false);
   
       if (response.ok) {
-        // שמירת auth_token ו-user_id ב-AsyncStorage
-        await AsyncStorage.setItem('auth_token', data.access_token); // שמירת ה-token
-        await AsyncStorage.setItem('user_id', String(data.userId)); // שמירת user_id
-        Alert.alert('Success', `Welcome, ${data.username}`);
-        navigation.replace('DrawerNavigator'); // ניווט ל-DrawerNavigator
+        // Check if the token is available in the response
+        if (data.token) {
+          // Store the token in AsyncStorage
+          await AsyncStorage.setItem('userToken', data.token);  // Store the JWT token
+          // Optionally store userId if needed
+          await AsyncStorage.setItem('userId', String(data.userId));
+  
+          Alert.alert('Success', `Welcome, ${data.username}`);
+          navigation.replace('DrawerNavigator'); // Navigate to DrawerNavigator
+        } else {
+          Alert.alert('Error', 'No token returned from the server.');
+        }
       } else if (response.status === 401) {
         setErrorMessage('Invalid email or password.');
       } else {

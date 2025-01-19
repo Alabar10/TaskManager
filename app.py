@@ -3,6 +3,7 @@ from flask import Flask, app, jsonify, request, session, make_response, url_for
 from flask_cors import CORS  # Importing CORS
 from flask_sqlalchemy import SQLAlchemy
 import pyodbc
+from sqlalchemy import exists
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer as Serializer
@@ -12,8 +13,9 @@ from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
-from models import db,User,PersonalTask, Group, GroupTask, group_user_association, task_user_association
+from models import db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association
 from extensions import db, mail, jwt
+import re
 
 # Load environment variables
 load_dotenv()
@@ -47,12 +49,10 @@ def create_app():
     # CORS setup
     CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:8081"}})
 
-    
-
-
     @app.after_request
     def add_cors_headers(response):
-        response.headers['Access-Control-Allow-Origin'] = 'http://localhost:8081'
+        if 'Access-Control-Allow-Origin' not in response.headers:
+            response.headers['Access-Control-Allow-Origin'] = 'http://localhost:8081'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
@@ -63,10 +63,9 @@ def create_app():
     return app
 
 # ==================================================== SQLHelper-Class ======================================================= #
-
 class SQLHelper(ABC):
-    connection = None  # connecction string for SQL server database
-    cursor = None  # cursor for executig SQL commands
+    connection = None  # connection string for SQL server database
+    cursor = None  # cursor for executing SQL commands
 
     # method for connecting to SQL server database
     def connect(self):
@@ -83,14 +82,6 @@ class SQLHelper(ABC):
             self.cursor.close()
         if self.connection:
             self.connection.close()
-# ==================================================== Models ======================================================= #
-
-
-
-
-
-
-
 
 # ==================================================== Routes ======================================================= #
 def register_routes(app):
@@ -304,18 +295,6 @@ def register_routes(app):
 
 
 
-    @app.route('/tasks/dates', methods=['GET'])
-    @jwt_required()  # דרישה ל-JWT
-    def get_tasks_by_date_range():
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        user_id = request.args.get('user_id')  # קבלת user_id מהבקשה
-
-        if not start_date or not end_date or not user_id:
-            return jsonify({"message": "Start date, end date, and user_id are required"}), 400
-    
-
-    
     @app.route('/tasks', methods=['POST'])
     def create_task():
         data = request.get_json()
@@ -516,70 +495,10 @@ def register_routes(app):
 
         
 
-    @app.route('/users/search', methods=['GET'])
-    @jwt_required(optional=True)  # Optional: Require JWT for authentication; remove if public
-    def search_user_by_email_or_username():
-        search_term = request.args.get('searchTerm')  # Retrieve the searchTerm parameter from the URL query string
-        
-        if not search_term:
-            return jsonify({"message": "Search term (email or username) is required"}), 400
-
-        try:
-            # Searching for users by email or username using case-insensitive matching
-            users = User.query.filter(
-                (User.email.ilike(f'%{search_term}%')) |  # Case-insensitive search for email
-                (User.username.ilike(f'%{search_term}%'))  # Case-insensitive search for username
-            ).all()  # Changed to `.all()` to return all matches
-            
-            if users:
-                user_list = [
-                    {"userId": user.userId, "username": user.username, "email": user.email, "fname": user.fname, "lname": user.lname}
-                    for user in users
-                ]
-                return jsonify(user_list), 200
-            else:
-                return jsonify({"message": "No user found with that email or username"}), 404
-        except Exception as e:
-            return jsonify({"message": str(e)}), 500
 
 
 
-
-    @app.route('/groups/<int:group_id>/add_user', methods=['POST'])
-    @jwt_required()  # Ensure JWT is required
-    def add_user_to_group(group_id):
-        user_id = get_jwt_identity()  # Get the user ID from the JWT token
-
-        # Log the incoming request data for debugging purposes
-        data = request.get_json()
-        requested_user_id = data.get('user_id')  # Get the user_id from the request body
-        print(f"Debug: Received user_id: {requested_user_id}, group_id: {group_id}")  # <-- Add this line to log the received user_id and group_id
-
-        # Ensure user_id is present in the body and is a valid integer
-        if not requested_user_id or not isinstance(requested_user_id, int):
-            return jsonify({"message": "Invalid user_id provided."}), 400
-
-        # Fetch the group and user from the database
-        group = Group.query.get(group_id)
-        if not group:
-            return jsonify({"message": "Group not found"}), 404
-
-        user = User.query.get(requested_user_id)
-        if not user:
-            return jsonify({"message": "User not found"}), 404
-
-        # Check if the user is already a member of the group
-        if user in group.members:
-            return jsonify({"message": "User is already a member of the group"}), 409
-
-        # Add user to the group
-        group.members.append(user)
-        db.session.commit()
-
-        return jsonify({"message": "User added to the group successfully!"}), 200
-
-
-
+    
 
 
 
@@ -614,37 +533,69 @@ def register_routes(app):
             db.session.rollback()
             return jsonify({"message": "Failed to create task", "error": str(e)}), 500
 
-    @app.route('/tasks/dates', methods=['GET'])
-    @jwt_required()  # Require JWT for authentication
-    def get_tasks_by_date_range():
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        user_id = get_jwt_identity()  # Get the user ID from the JWT token
+    
 
-        if not start_date or not end_date:
-            return jsonify({"message": "Start and end dates are required"}), 400
+    @app.route('/search_users', methods=['GET'])
+    def search_users():
+        query = request.args.get('query', '').strip()
+        if not query:
+            return jsonify([]), 200
+
+        users = User.query.filter(
+            db.or_(User.username.ilike(f"%{query}%"), User.email.ilike(f"%{query}%"))
+        ).all()
+
+        return jsonify([{
+            "userId": user.userId,
+            "username": user.username,
+            "email": user.email,
+            "fname": user.fname,
+            "lname": user.lname
+        } for user in users]), 200
+
+
+    @app.route('/add_user_to_group', methods=['POST'])
+    def add_user_to_group():
+        data = request.get_json(force=True)  # Using force=True to ensure JSON format is enforced
+        group_id = data.get('group_id')
+        user_id = data.get('user_id')
+
+        # Validate presence of required parameters
+        if not group_id or not user_id:
+            return jsonify({"error": "Missing required parameters: group_id or user_id"}), 400
 
         try:
-            # Authenticate the connected user and filter tasks by date range
-            tasks = PersonalTask.query.filter(
-                PersonalTask.user_id == user_id,  # Filter by user_id
-                PersonalTask.due_date.between(start_date, end_date)
-            ).all()
-            task_list = [task.to_dict() for task in tasks]  # Convert tasks to dictionary format for JSON response
-            return jsonify(task_list), 200
+            # Retrieve group and user from the database
+            group = Group.query.get(group_id)
+            if not group:
+                return jsonify({"error": "Group not found"}), 404
+
+            user = User.query.get(user_id)
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+
+            # Check if user is already a member of the group
+            if user in group.members:
+                return jsonify({"message": "User is already a member of this group"}), 200
+
+            # Add user to the group
+            group.members.append(user)
+            db.session.commit()
+
+            return jsonify({"message": "User added to group successfully"}), 200
+
+        except SQLAlchemyError as e:
+            db.session.rollback()  # Roll back the transaction on error
+            return jsonify({"error": "Database error", "message": str(e)}), 500
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-
-
-
+            db.session.rollback()
+            return jsonify({"error": "Internal server error", "message": str(e)}), 500
 # ==================================================== Main ========================================================== #
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 if __name__ == '__main__':
     app = create_app()  # Use the app from the create_app function
     try:
-
         with app.app_context():
             db.create_all()  
             logging.info("Database tables created successfully.")
@@ -653,6 +604,3 @@ if __name__ == '__main__':
         app.run(host=os.getenv('HOST_IP', '0.0.0.0'), port=5000)
     except Exception as e:
         logging.error(f"Failed to start the application: {e}")
-
- 
-

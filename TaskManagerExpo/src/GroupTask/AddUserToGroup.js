@@ -1,174 +1,87 @@
-import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  FlatList,
-} from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import React, { useState } from 'react';
+import { View, TextInput, Button, FlatList, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MaterialCommunityIcons } from 'react-native-vector-icons';  // Import the back icon
-import config from '../config'; // Assuming you have the config file with API_URL
+import config from '../config'; // Ensure this points to your actual API configuration
 
-const AddUserToGroup = () => {
-  const route = useRoute();
-  const navigation = useNavigation();
-  const { groupId } = route.params;  // Get groupId from route params
+const AddUserToGroup = ({ route }) => {
+  const { groupId } = route.params;
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [searchTerm, setSearchTerm] = useState("");  // Search term for email/username
-  const [userList, setUserList] = useState([]);  // List of users returned from search
-  const [isSearching, setIsSearching] = useState(false);
-  const [isAdding, setIsAdding] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);  // User selected for adding to group
-
-  const isValidSearchTerm = (term) => /\S+/.test(term);  // Validate search input
-
-  const handleSearch = async () => {
-    if (!searchTerm.trim() || !isValidSearchTerm(searchTerm)) {
-      Alert.alert("Error", "Please enter a valid email or username to search.");
+  const searchUsers = async () => {
+    if (!query.trim()) {
+      Alert.alert("Validation Error", "Please enter a search query.");
       return;
     }
-
-    setIsSearching(true);
+    setIsLoading(true);
     try {
-      const response = await fetch(
-        `${config.API_URL}/users/search?searchTerm=${encodeURIComponent(searchTerm)}`
-      );
+      const url = `${config.API_URL}/search_users?query=${encodeURIComponent(query)}`;
+      const response = await fetch(url);
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to search for user.");
-      }
-
-      if (data.length === 0) {
-        Alert.alert("Error", "No users found.");
-        setUserList([]);  // Clear user list if no user is found
+      if (response.ok) {
+        setResults(data);
       } else {
-        setUserList(data);  // Set the user list if users are found
+        throw new Error(data.message || 'Error fetching users');
       }
     } catch (error) {
-      setUserList([]);  // Clear previous results if an error occurs
-      Alert.alert("Error", error.message || "Something went wrong.");
+      console.error('Error fetching users:', error);
+      Alert.alert("Error", error.toString());
     } finally {
-      setIsSearching(false);
+      setIsLoading(false);
     }
   };
 
-  const handleAddUser = async () => {
-    if (!selectedUser || !selectedUser.userId) {
-      Alert.alert("Error", "No user selected or invalid user data. Please search again.");
-      return;
-    }
-
-    setIsAdding(true);
+  const addUserToGroup = async (userId) => {
+    setIsLoading(true);
     try {
-      const token = await AsyncStorage.getItem('userToken');
-
-      if (!token) {
-        Alert.alert("Error", "You are not logged in.");
-        setIsAdding(false);
-        return;
-      }
-
-      const body = {
-        user_id: selectedUser.userId, // Ensure this is the correct userId from the selected user
-      };
-
-      // Log the payload before sending it
-      console.log("Request body:", body);  // <-- Add this line to verify the payload
-
-      const response = await fetch(
-        `${config.API_URL}/groups/${groupId}/add_user`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-          },
-          body: JSON.stringify(body),  // Sending the user ID in the body
-        }
-      );
-
+      const body = JSON.stringify({ group_id: groupId, user_id: userId });
+      const url = `${config.API_URL}/add_user_to_group`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body
+      });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to add user to the group.");
+      if (response.ok) {
+        Alert.alert("Success", "User added successfully!");
+      } else {
+        Alert.alert("Failed to Add User", data.message || 'Failed to add user to group');
       }
-
-      Alert.alert("Success", "User added to the group successfully!");
-      navigation.goBack();
     } catch (error) {
-      Alert.alert("Error", error.message || "Something went wrong.");
+      console.error('Error adding user to group:', error);
+      Alert.alert("Error", error.toString());
     } finally {
-      setIsAdding(false);
+      setIsLoading(false);
     }
   };
-
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.userItem}
-      onPress={() => setSelectedUser(item)}  // Select the user from the list
-    >
-      <Text style={styles.userName}>{item.fname} {item.lname}</Text>
-      <Text style={styles.userEmail}>{item.email}</Text>
-    </TouchableOpacity>
-  );
 
   return (
     <View style={styles.container}>
-      {/* Back Button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
-      </TouchableOpacity>
-
-      <Text style={styles.heading}>Add User to Group</Text>
-
       <TextInput
         style={styles.input}
-        placeholder="Enter email or username to search"
-        value={searchTerm}
-        onChangeText={setSearchTerm}
+        placeholder="Search by username or email"
+        value={query}
+        onChangeText={setQuery}
       />
-
-      <TouchableOpacity
-        style={[styles.button, isSearching && styles.disabledButton]}
-        onPress={handleSearch}
-        disabled={isSearching}
-      >
-        <Text style={styles.buttonText}>
-          {isSearching ? "Searching..." : "Search User"}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Display search results if available */}
-      {userList.length > 0 && (
-        <FlatList
-          data={userList}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.userId.toString()}
-          style={styles.userList}
-        />
-      )}
-
-      {/* Show selected user details */}
-      {selectedUser && (
-        <View style={styles.selectedUser}>
-          <Text style={styles.selectedUserName}>Selected User: {selectedUser.fname} {selectedUser.lname}</Text>
-          <Text style={styles.selectedUserEmail}>{selectedUser.email}</Text>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={[styles.button, isAdding && styles.disabledButton]}
-        onPress={handleAddUser}
-        disabled={isAdding}
-      >
-        <Text style={styles.buttonText}>
-          {isAdding ? "Adding..." : "Add User"}
-        </Text>
-      </TouchableOpacity>
+      <Button title="Search" onPress={searchUsers} disabled={isLoading} />
+      {isLoading && <ActivityIndicator size="large" color="#0000ff" />}
+      <FlatList
+        data={results}
+        keyExtractor={(item) => item.userId.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.userItem}>
+            <Text>{item.username} ({item.email})</Text>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => addUserToGroup(item.userId)}
+              disabled={isLoading}
+            >
+              <Text style={styles.addButtonText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
     </View>
   );
 };
@@ -176,80 +89,50 @@ const AddUserToGroup = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
     backgroundColor: "#F5F5F5",
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
+    padding: 20,
+    paddingTop: 50,  // Adds a top padding for better spacing from the status bar
   },
   input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 15,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: "#6A5ACD",
-    paddingVertical: 15,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
-  },
-  disabledButton: {
-    backgroundColor: "#CCC",
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  userList: {
-    marginTop: 10,
+    borderWidth: 2,
+    borderColor: '#6A5ACD',  // A color that matches the button for consistency
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+    fontSize: 16,  // Increase font size for better readability
+    color: '#333',  // Darker font color for better contrast
   },
   userItem: {
-    padding: 12,
-    backgroundColor: "#fff",
-    marginBottom: 10,
-    borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    marginVertical: 5,
+    backgroundColor: '#FFFFFF',  // Adds a background color to each item for better focus
+    borderRadius: 10,  // Rounded corners for the list items
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
-  userName: {
+  addButton: {
+    backgroundColor: '#6A5ACD',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+  },
+  addButtonText: {
+    color: '#fff',
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: 'bold',  // Make text bold to stand out more
   },
-  userEmail: {
-    fontSize: 14,
-    color: "#666",
-  },
-  selectedUser: {
+  activityIndicator: {
     marginTop: 20,
-    padding: 16,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-  },
-  selectedUserName: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  selectedUserEmail: {
-    fontSize: 14,
-    color: "#666",
-  },
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 10,
-    padding: 10,
-  },
+  }
 });
 
 export default AddUserToGroup;
