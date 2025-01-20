@@ -82,7 +82,7 @@ const AddTask = ({ navigation }) => {
     setIsLoading(true);
     try {
       const userId = await AsyncStorage.getItem('userId');
-      const response = await axios.post('${config.API_URL}/tasks', {
+      const response = await axios.post(`${config.API_URL}/tasks`, {
         title,
         description,
         due_date: dueDate,

@@ -387,6 +387,7 @@ def register_routes(app):
             return jsonify({"error": str(e)}), 500
 
 
+
     @app.route('/groups/user/<int:user_id>', methods=['GET'])
     def get_user_groups(user_id):
         try:
@@ -406,6 +407,7 @@ def register_routes(app):
             return jsonify(group_list), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
 
 
     @app.route('/groups/<int:group_id>/tasks', methods=['GET'])
@@ -590,6 +592,51 @@ def register_routes(app):
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": "Internal server error", "message": str(e)}), 500
+        
+
+
+    @app.route('/tasks/dates', methods=['GET'])
+    def get_tasks_by_dates():
+        user_id = request.args.get('user_id')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        # Validate user_id
+        if not user_id:
+            return jsonify({"error": "User ID is required"}), 400
+
+        # Validate date format
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            if start > end:
+                return jsonify({"error": "Start date must be before end date"}), 400
+        except ValueError:
+            return jsonify({"error": "Invalid date format, use YYYY-MM-DD"}), 400
+
+        try:
+            # Fetch tasks from the database
+            tasks = PersonalTask.query.filter(
+                PersonalTask.user_id == user_id,
+                PersonalTask.due_date >= start,
+                PersonalTask.due_date <= end
+            ).all()
+
+            # Convert tasks to dictionary format using the model's to_dict method
+            task_list = [task.to_dict() for task in tasks] if tasks else []
+            return jsonify(task_list), 200
+        except SQLAlchemyError as e:
+            print(f"Database error occurred: {e}")
+            return jsonify({"error": "Failed to fetch tasks from the database"}), 500  
+
+
+
+
+
+
+
+
+
 # ==================================================== Main ========================================================== #
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
