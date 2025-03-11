@@ -1,10 +1,20 @@
-import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback } from "react";
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+} from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import config from '../config'; // Adjust the path based on your file structure
+import axios from "axios"; // Use Axios for better API handling
+import config from "../config"; // Adjust the path based on your file structure
+import { FontAwesome5 } from "@expo/vector-icons";
+import { SectionList } from "react-native";
 
 const HomePage = () => {
   const [items, setItems] = useState([]);
@@ -15,32 +25,59 @@ const HomePage = () => {
   const fetchData = async () => {
     setIsLoading(true);
     const userId = await AsyncStorage.getItem("userId");
+  
     if (!userId) {
       console.error("User ID not found");
       setIsLoading(false);
       return;
     }
-    console.log('API URL:', config.API_URL); // Debugging the API URL
-
+  
+    console.log("API URL:", config.API_URL); // Debugging the API URL
+  
     try {
-      let response;
+      let tasksData = [];
+      let groupsData = [];
+  
       if (selectedTab === "Group") {
-        response = await fetch(`${config.API_URL}/groups/user/${userId}`);
-        const groupsData = await response.json();
-        setItems(groupsData);
+        // Fetch only group tasks
+        const response = await axios.get(`${config.API_URL}/groups/user/${userId}`);
+        groupsData = response.data.map(group => ({ ...group, type: "group" }));
+        setItems(groupsData || []);
       } else if (selectedTab === "All") {
-        const tasksResponse = await fetch(`${config.API_URL}/tasks/user/${userId}`);
-        const groupsResponse = await fetch(`${config.API_URL}/groups/user/${userId}`);
-        const tasksData = await tasksResponse.json();
-        const groupsData = await groupsResponse.json();
-        setItems([...tasksData, ...groupsData]);
-      } else { // "Personal"
-        response = await fetch(`${config.API_URL}/tasks/user/${userId}`);
-        const tasksData = await response.json();
-        const personalTasks = tasksData.filter(task => !task.groupId); // Filter out tasks that do not have a groupId
-        setItems(personalTasks);
-        console.log("Personal Tasks:", personalTasks); // Debugging line to inspect personal tasks
+        // Fetch both tasks and groups simultaneously
+        const [tasksResponse, groupsResponse] = await Promise.all([
+          axios.get(`${config.API_URL}/tasks/user/${userId}`),
+          axios.get(`${config.API_URL}/groups/user/${userId}`),
+        ]);
+  
+        tasksData = tasksResponse.data.map(task => ({
+          ...task,
+          type: "task",
+          status: task.status || "To Do", // Default status
+        }));
+  
+        groupsData = groupsResponse.data.map(group => ({
+          ...group,
+          type: "group",
+        }));
+  
+        // ✅ Structure data into sections
+        setItems([
+          { title: "Personal Tasks", data: tasksData },
+          { title: "Group Tasks", data: groupsData }
+        ]);
+      } else if (selectedTab === "Personal") {
+        // Fetch only personal tasks
+        const response = await axios.get(`${config.API_URL}/tasks/user/${userId}`);
+        tasksData = response.data.map(task => ({
+          ...task,
+          type: "task",
+          status: task.status || "To Do",
+        }));
+        setItems(tasksData);
       }
+  
+      console.log("Fetched Items:", [...tasksData, ...groupsData]);
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
@@ -48,7 +85,7 @@ const HomePage = () => {
     }
   };
   
-  
+
 
   useFocusEffect(
     useCallback(() => {
@@ -60,50 +97,95 @@ const HomePage = () => {
     fetchData();
   };
 
+  const statusIcons = {
+    "To Do": <FontAwesome5 name="clipboard-list" size={18} color="#FF6347" />, // Red
+    "In Progress": <FontAwesome5 name="tasks" size={18} color="#FFA500" />, // Orange
+    "Done": <FontAwesome5 name="check-circle" size={18} color="#32CD32" />, // Green
+  };
+
   const renderItem = ({ item }) => {
-    const isGroupTask = selectedTab === "Group";
+    console.log("Rendering Item:", item); // ✅ Debug item data
+
     return (
-      <TouchableOpacity
-        style={styles.taskItem}
-        onPress={() => {
-          if (isGroupTask) {
-            navigation.navigate("GroupTasks", { groupId: item.id, groupName: item.name });
-          } else {
-            navigation.navigate("TaskDetails", { task: item });
-          }
-        }}
-      >
-        <Text style={styles.taskTitle}>{item.name || item.title}</Text>
-        {isGroupTask && <Text style={styles.groupDetails}>Members: {item.members?.length || 0}</Text>}
-        {!isGroupTask && <Text style={styles.taskDetails}>Due: {item.due_date || "No Due Date"}</Text>}
-      </TouchableOpacity>
+        <TouchableOpacity
+            style={styles.taskItem}
+            onPress={() => {
+                if (item.type === "group") {
+                    navigation.navigate("GroupTasks", {
+                        groupId: item.id,
+                        groupName: item.name,
+                    });
+                } else {
+                    navigation.navigate("TaskDetails", { task: item });
+                }
+            }}
+        >
+            <View style={styles.taskRow}>
+                <Text style={styles.taskTitle}>{item.name || item.title}</Text>
+
+                {/* ✅ Ensure status exists before rendering the icon */}
+                {item.type === "task" && item.status && statusIcons[item.status] && (
+                    <View style={styles.statusIconContainer}>
+                        {statusIcons[item.status]}
+                    </View>
+                )}
+            </View>
+
+            {item.type === "group" ? (
+                <Text style={styles.groupDetails}>Members: {item.members?.length || 0}</Text>
+            ) : (
+                <Text style={styles.taskDetails}>Created at: {item.due_date || "No Due Date"}</Text>
+            )}
+        </TouchableOpacity>
     );
   };
+ 
 
   return (
     <View style={styles.container}>
+      {/* Tabs for selecting Task type */}
       <View style={styles.tabsContainer}>
         <TouchableOpacity
           style={[styles.tab, selectedTab === "All" && styles.activeTab]}
           onPress={() => setSelectedTab("All")}
         >
-          <Text style={[styles.tabText, selectedTab === "All" && styles.activeTabText]}>All</Text>
+          <Text style={[styles.tabText, selectedTab === "All" && styles.activeTabText]}>
+            All
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, selectedTab === "Personal" && styles.activeTab]}
           onPress={() => setSelectedTab("Personal")}
         >
-          <Text style={[styles.tabText, selectedTab === "Personal" && styles.activeTabText]}>Personal</Text>
+          <Text style={[styles.tabText, selectedTab === "Personal" && styles.activeTabText]}>
+            Personal
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, selectedTab === "Group" && styles.activeTab]}
           onPress={() => setSelectedTab("Group")}
         >
-          <Text style={[styles.tabText, selectedTab === "Group" && styles.activeTabText]}>Group</Text>
+          <Text style={[styles.tabText, selectedTab === "Group" && styles.activeTabText]}>
+            Group
+          </Text>
         </TouchableOpacity>
       </View>
+  
+      {/* Loading Indicator */}
       {isLoading ? (
         <ActivityIndicator size="large" color="#6A5ACD" />
+      ) : selectedTab === "All" ? (
+        <SectionList
+          sections={items} // ✅ Use sectioned data (Personal & Group tasks)
+          keyExtractor={(item) => `${item.id}-${item.type || item.name}`}
+          renderItem={renderItem}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.sectionHeader}>{title}</Text>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No tasks or groups available.</Text>
+          }
+        />
       ) : (
         <FlatList
           data={items}
@@ -116,6 +198,8 @@ const HomePage = () => {
           }
         />
       )}
+  
+      {/* Floating Action Button to Add Tasks/Groups */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate(selectedTab === "Group" ? "Addgroup" : "AddTask")}
@@ -202,6 +286,24 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontSize: 16,
   },
+  taskRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  statusIconContainer: {
+    alignSelf: "flex-end",
+    marginLeft: "auto", 
+    paddingRight: 10, 
+  },
+  sectionHeader: {
+    fontSize: 18,
+    fontWeight: "bold",
+    backgroundColor: "#f4f4f4",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginTop: 10,
+},
 });
 
 export default HomePage;

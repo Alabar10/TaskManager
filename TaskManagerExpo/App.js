@@ -12,7 +12,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/AuthContext";
-
 import Register from "./src/Register/register";
 import ResetEmail from "./src/ResetEmail/ResetEmail";
 import ResetPassword from "./src/ResetEmail/ResetPassword";
@@ -25,7 +24,8 @@ import GroupTasksScreen from './src/GroupTask/GroupTasksScreen';
 import AddGroupTask from "./src/AddTask/addgrouptask";
 import Addgroup from "./src/AddTask/addgroup";
 import AddUserToGroup from './src/GroupTask/AddUserToGroup';  
-
+import Schedule from './src/Schedule/schedule'
+import GroupMembersScreen from "./src/GroupTask/GroupMembersScreen";
 
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
@@ -76,8 +76,8 @@ const TabNavigator = () => (
         let iconName;
         if (route.name === "Home") iconName = "home";
         else if (route.name === "Calendar") iconName = "calendar-today";
-        else if (route.name === "Analytics") iconName = "chart-line";
-        else if (route.name === "Settings") iconName = "cog";
+        else if (route.name === "Schedule") iconName = "chart-line";
+        else if (route.name === "data") iconName = "cog";
 
         return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
       },
@@ -98,9 +98,9 @@ const TabNavigator = () => (
   >
     <Tab.Screen name="Home" component={HomePage} />
     <Tab.Screen name="Calendar" component={require("./src/Calendar/CalendarScreen").default} />
-    <Tab.Screen name="Analytics" component={AnalyticsScreen} />
-    <Tab.Screen name="Settings" component={Settings} />
-  </Tab.Navigator>
+    <Tab.Screen name="Schedule" component={Schedule} />
+    <Tab.Screen name="data" component={() => <View />} />
+    </Tab.Navigator>
 );
 
 // Drawer Navigator
@@ -110,6 +110,8 @@ const DrawerNavigator = () => (
     screenOptions={{ headerShown: false }}
   >
     <Drawer.Screen name="Task Manager" component={TabNavigator} />
+    <Drawer.Screen name="Settings" component={Settings} />
+
   </Drawer.Navigator>
 );
 
@@ -131,7 +133,8 @@ const App = () => (
             <Stack.Screen name="AddGroupTask" component={AddGroupTask} />
             <Stack.Screen name="Addgroup" component={Addgroup} />
             <Stack.Screen name="AddUserToGroup" component={AddUserToGroup} />
-
+            <Stack.Screen name="GroupMembers" component={GroupMembersScreen} />
+            
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>
@@ -139,12 +142,6 @@ const App = () => (
   </SafeAreaProvider>
 );
 
-// Placeholder Screens
-const AnalyticsScreen = () => (
-  <View style={styles.screenContainer}>
-    <Text>Analytics Screen</Text>
-  </View>
-);
 
 // Styles
 const styles = StyleSheet.create({

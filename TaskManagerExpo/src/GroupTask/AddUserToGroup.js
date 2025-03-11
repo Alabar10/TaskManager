@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, TextInput, Button, FlatList, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, TextInput, FlatList, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import config from '../config'; // Ensure this points to your actual API configuration
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation } from "@react-navigation/native";
 
 const AddUserToGroup = ({ route }) => {
+  const navigation = useNavigation();
   const { groupId } = route.params;
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -57,82 +59,168 @@ const AddUserToGroup = ({ route }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <TextInput
-        style={styles.input}
-        placeholder="Search by username or email"
-        value={query}
-        onChangeText={setQuery}
-      />
-      <Button title="Search" onPress={searchUsers} disabled={isLoading} />
-      {isLoading && <ActivityIndicator size="large" color="#0000ff" />}
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.userId.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.userItem}>
-            <Text>{item.username} ({item.email})</Text>
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => addUserToGroup(item.userId)}
-              disabled={isLoading}
-            >
-              <Text style={styles.addButtonText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      />
-    </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={()=> navigation.goBack()}>
+          <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerText}>Add Users to Group</Text>
+      </View>
+    
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Search by username or email..."
+          placeholderTextColor="#999"
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={searchUsers}
+        />
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={searchUsers}
+          disabled={isLoading}
+        >
+          <Text style={styles.searchButtonText}>Search</Text>
+        </TouchableOpacity>
+      </View>
+
+      {isLoading ? (
+        <ActivityIndicator size="large" color="#6A5ACD" style={styles.loader} />
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.userId.toString()}
+          renderItem={({ item }) => (
+            <View style={styles.userItem}>
+              <View style={styles.userInfo}>
+                <Text style={styles.username}>{item.username}</Text>
+                <Text style={styles.email}>{item.email}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => addUserToGroup(item.userId)}
+                disabled={isLoading}
+              >
+                <Text style={styles.addButtonText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No users found. Try searching!</Text>
+          }
+        />
+      )}
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F5F5",
-    padding: 20,
-    paddingTop: 50,  // Adds a top padding for better spacing from the status bar
+    backgroundColor: '#F5F5F5',
+  },
+  header: {
+    backgroundColor: '#6A5ACD',
+    paddingVertical: 40,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  headerText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginTop:20,
+    marginBottom: -20,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
   },
   input: {
-    borderWidth: 2,
-    borderColor: '#6A5ACD',  // A color that matches the button for consistency
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 20,
-    fontSize: 16,  // Increase font size for better readability
-    color: '#333',  // Darker font color for better contrast
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#333',
+    marginRight: 10,
+  },
+  searchButton: {
+    backgroundColor: '#6A5ACD',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  searchButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   userItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    marginVertical: 5,
-    backgroundColor: '#FFFFFF',  // Adds a background color to each item for better focus
-    borderRadius: 10,  // Rounded corners for the list items
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    padding: 16,
+    marginVertical: 8,
+    marginHorizontal: 16,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  userInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  username: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  email: {
+    fontSize: 14,
+    color: '#666',
   },
   addButton: {
     backgroundColor: '#6A5ACD',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 20,
   },
   addButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',  // Make text bold to stand out more
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
-  activityIndicator: {
+  emptyText: {
+    textAlign: 'center',
     marginTop: 20,
-  }
+    fontSize: 16,
+    color: '#666',
+  },
+  loader: {
+    marginTop: 20,
+  },
+  backButton: {
+    position: 'absolute',  // Keeps it inside the header without affecting layout
+    left: 10,             // Push it a little from the left
+    top: '80',          
+    transform: [{ translateY: -13 }], // Adjusts vertical alignment (13px is half of icon size)
+    zIndex: 10,           // Ensures it's above other elements
+  },  
 });
 
 export default AddUserToGroup;

@@ -17,7 +17,24 @@ const Settings = ({ navigation }) => {
   const [user, setUser] = useState({ fname: '', lname: '', email: '', password: '' });
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-
+  
+  useEffect(() => {
+    navigation.setOptions({
+      headerShown: true,
+      title: "Settings",
+      headerStyle: { backgroundColor: "#6A5ACD" },
+      headerTintColor: "#fff",
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={() => navigation.toggleDrawer()} // Opens the drawer
+          style={{ marginLeft: 15 }}
+        >
+          <MaterialCommunityIcons name="menu" size={28} color="#fff" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
+  
   const fetchUserData = async () => {
     console.log('Attempting to fetch data for user ID:', userId);
     if (!userId) {

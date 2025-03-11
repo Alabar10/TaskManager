@@ -1,18 +1,12 @@
 import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import {View,Text,FlatList,TouchableOpacity,StyleSheet,ActivityIndicator,Alert,} from "react-native";
+import { useRoute, useNavigation,useFocusEffect  } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import config from "../config"; // Adjust the path based on your file structure
 import axios from "axios"; // Axios for API requests
+import { LinearGradient } from 'expo-linear-gradient';
+import { FontAwesome5 } from "@expo/vector-icons";
 
 const GroupTasksScreen = () => {
   const route = useRoute();
@@ -22,38 +16,48 @@ const GroupTasksScreen = () => {
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreator, setIsCreator] = useState(false); // Tracks if the current user is the group creator
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch group details and tasks
-  useEffect(() => {
-    const fetchGroupData = async () => {
-      try {
-        setIsLoading(true);
+  const fetchGroupData = async () => {
+    try {
+      setRefreshing(true); // ✅ Start refreshing
+      setIsLoading(true);
 
-        // Get current user ID
-        const userId = await AsyncStorage.getItem("userId");
+      const userId = await AsyncStorage.getItem("userId");
 
-        // Fetch group details
-        const groupResponse = await fetch(`${config.API_URL}/groups?group_id=${groupId}`);
-        const groupData = await groupResponse.json();
+      const groupResponse = await fetch(`${config.API_URL}/groups?group_id=${groupId}`);
+      const groupData = await groupResponse.json();
+      setIsCreator(parseInt(userId, 10) === groupData.created_by);
 
-        // Check if the current user is the creator of the group
-        setIsCreator(parseInt(userId, 10) === groupData.created_by);
+      const tasksResponse = await fetch(`${config.API_URL}/groups/${groupId}/tasks`);
+      let tasksData = await tasksResponse.json();
 
-        // Fetch group tasks
-        const tasksResponse = await fetch(`${config.API_URL}/groups/${groupId}/tasks`);
-        const tasksData = await tasksResponse.json();
-        setTasks(tasksData);
-      } catch (error) {
-        console.error("Error fetching group data:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+        tasksData = tasksData.map(task => ({
+          ...task,
+          status: task.status || "To Do", 
+      }));
 
+      console.log("Fetched Group Tasks Data:", tasksData); // Debugging
+      setTasks(tasksData);
+    } catch (error) {
+      console.error("Error fetching group data:", error);
+    } finally {
+      setRefreshing(false); // ✅ Stop refreshing
+      setIsLoading(false);
+    }
+  };
+
+  // ✅ Pull-to-Refresh function
+  const onRefresh = () => {
     fetchGroupData();
-  }, [groupId]);
+  };
 
- 
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchGroupData(); // Fetch data when screen is focused
+    }, [groupId])
+  );
+  
 
   // Delete group handler
   const handleDeleteGroup = async () => {
@@ -73,7 +77,7 @@ const GroupTasksScreen = () => {
             onPress: async () => {
               try {
                 setIsLoading(true);
-  
+
                 // Get the current user ID
                 const userId = await AsyncStorage.getItem("userId");
                 if (!userId) {
@@ -81,10 +85,7 @@ const GroupTasksScreen = () => {
                   Alert.alert("Error", "User not found. Please log in again.");
                   return;
                 }
-  
-                console.log("Deleting group:", groupId);  // Debugging log
-                console.log("User ID:", userId);  // Debugging log
-  
+
                 // Send DELETE request to the API
                 const response = await axios.delete(`${config.API_URL}/groups/${groupId}`, {
                   headers: {
@@ -92,7 +93,7 @@ const GroupTasksScreen = () => {
                     "User-ID": userId,
                   },
                 });
-  
+
                 if (response.status === 200) {
                   Alert.alert("Success", "Group deleted successfully!");
                   navigation.goBack(); // Navigate back to the previous screen
@@ -105,7 +106,7 @@ const GroupTasksScreen = () => {
                 console.error("Error deleting group:", error);
                 Alert.alert("Error", "Something went wrong while deleting the group.");
               } finally {
-                setIsLoading(false);  // Set loading state to false after the operation
+                setIsLoading(false); // Set loading state to false after the operation
               }
             },
           },
@@ -117,7 +118,13 @@ const GroupTasksScreen = () => {
       Alert.alert("Error", "Something went wrong while confirming deletion.");
     }
   };
-  
+
+
+  const statusIcons = {
+    "To Do": <FontAwesome5 name="clipboard-list" size={18} color="#FF6347" />, // Red
+    "In Progress": <FontAwesome5 name="tasks" size={18} color="#FFA500" />, // Orange
+    "Done": <FontAwesome5 name="check-circle" size={18} color="#32CD32" />, // Green
+  };
 
   // Render each task
   const renderItem = ({ item }) => (
@@ -125,14 +132,23 @@ const GroupTasksScreen = () => {
       style={styles.taskItem}
       onPress={() => navigation.navigate("TaskDetails", { task: item })}
     >
-      <Text style={styles.taskTitle}>{item.title}</Text>
-      <Text style={styles.taskDetails}>Priority: {item.priority}</Text>
-      <Text style={styles.taskDetails}>Due: {item.due_date || "No Due Date"}</Text>
+       <View style={styles.taskRow}>
+                <Text style={styles.taskTitle}>{item.title}</Text>
+
+                {/* ✅ Status icon aligned to the right */}
+                {item.status && statusIcons[item.status] && (
+                    <View style={styles.statusIconContainer}>
+                        {statusIcons[item.status]}
+                    </View>
+                )}
+            </View>
+
+      <Text style={styles.taskDetails}>created at: {item.due_date || "No Due Date"}</Text>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
+    <LinearGradient colors={["#6A5ACD", "#4B0082"]} style={styles.container}>
       <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
         <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
       </TouchableOpacity>
@@ -140,7 +156,7 @@ const GroupTasksScreen = () => {
       <Text style={styles.groupTitle}>{groupName}</Text>
 
       {isLoading ? (
-        <ActivityIndicator size="large" color="#6A5ACD" />
+        <ActivityIndicator size="large" color="#fff" />
       ) : (
         <FlatList
           data={tasks}
@@ -151,6 +167,14 @@ const GroupTasksScreen = () => {
           }
         />
       )}
+
+      {/* Show View Members button */}
+      <TouchableOpacity
+        style={styles.viewMembersButton}
+        onPress={() => navigation.navigate("GroupMembers", { groupId })}
+      >
+        <Text style={styles.viewMembersText}>👥 View Members</Text>
+      </TouchableOpacity>
 
       {/* Show Add Task button */}
       <TouchableOpacity
@@ -179,14 +203,13 @@ const GroupTasksScreen = () => {
           <Text style={styles.deleteButtonText}>Delete Group</Text>
         </TouchableOpacity>
       )}
-    </View>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F5F5",
     paddingTop: 20,
   },
   backButton: {
@@ -195,29 +218,32 @@ const styles = StyleSheet.create({
     left: 10,
     padding: 10,
     borderRadius: 20,
-    backgroundColor: "#6A5ACD",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   groupTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "bold",
     textAlign: "center",
     marginBottom: 20,
     marginTop: 60,
+    color: "#fff",
   },
   taskItem: {
     backgroundColor: "#fff",
     padding: 16,
     marginVertical: 8,
     marginHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   taskTitle: {
     fontSize: 18,
     fontWeight: "bold",
+    color: "#333",
   },
   taskDetails: {
     fontSize: 14,
@@ -225,7 +251,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: "center",
-    color: "#888",
+    color: "#fff",
     marginTop: 20,
     fontSize: 16,
   },
@@ -234,40 +260,87 @@ const styles = StyleSheet.create({
     right: 20,
     bottom: 80,
     backgroundColor: "#6A5ACD",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   fabText: {
     color: "#fff",
     fontWeight: "bold",
+    fontSize: 16,
   },
   addUserButton: {
     position: "absolute",
     right: 20,
     bottom: 20,
     backgroundColor: "#FF6347",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   addUserText: {
     color: "#fff",
     fontWeight: "bold",
+    fontSize: 16,
   },
   deleteButton: {
     position: "absolute",
     left: 20,
     bottom: 20,
     backgroundColor: "#DC143C",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   deleteButtonText: {
     color: "#fff",
     fontWeight: "bold",
+    fontSize: 16,
   },
+  viewMembersButton: {
+    position: "absolute",
+    right: 20,
+    bottom: 140,
+    backgroundColor: "#6A5ACD",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  viewMembersText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  taskRow: {
+    flexDirection: "row",
+    justifyContent: "space-between", 
+    alignItems: "center",
+},
+statusIconContainer: {
+    alignSelf: "flex-end", 
+    marginLeft: "auto", 
+    paddingRight: 10, 
+},
 });
 
 export default GroupTasksScreen;

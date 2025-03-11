@@ -1,6 +1,6 @@
 from datetime import datetime
 from extensions import db
-
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 
 
 class User(db.Model):
@@ -28,7 +28,7 @@ class PersonalTask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
-    due_date = db.Column(db.DateTime)
+    due_date = db.Column(db.DateTime, default=db.func.current_timestamp())  
     deadline = db.Column(db.DateTime)
     priority = db.Column(db.Integer, nullable=False)  # Values 1-4 only
     status = db.Column(db.String(50))
@@ -107,12 +107,13 @@ class GroupTask(db.Model):
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
     group_id = db.Column(db.Integer, db.ForeignKey('Groups.id', ondelete='CASCADE'), nullable=False)
-    due_date = db.Column(db.DateTime)
+    due_date = db.Column(db.DateTime, default=datetime.utcnow)  
+    deadline = db.Column(db.DateTime, nullable=True)  
     priority = db.Column(db.Integer, nullable=False)
     status = db.Column(db.String(50), default="Pending")
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
-
+    
     assigned_users = db.relationship(
         'User',
         secondary=task_user_association,
@@ -126,9 +127,46 @@ class GroupTask(db.Model):
             "description": self.description,
             "group_id": self.group_id,
             "due_date": self.due_date.strftime("%Y-%m-%d %H:%M:%S") if self.due_date else None,
+            "deadline": self.deadline.strftime("%Y-%m-%d %H:%M:%S") if isinstance(self.deadline, datetime) else None, 
             "priority": self.priority,
             "status": self.status,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
             "assigned_users": [user.userId for user in self.assigned_users]
+        }
+
+
+
+
+
+
+
+class UserFreeSchedule(db.Model):
+    __tablename__ = 'UserFreeSchedule'
+    __table_args__ = {'schema': 'dbo'}  # Ensure SQLAlchemy targets the dbo schema
+
+    schedule_id = db.Column("ScheduleID", db.Integer, primary_key=True)
+    user_id = db.Column("UserID", db.Integer, db.ForeignKey('Users.userId'), nullable=False)
+    sunday = db.Column("Sunday", db.String(255), nullable=True)
+    monday = db.Column("Monday", db.String(255), nullable=True)
+    tuesday = db.Column("Tuesday", db.String(255), nullable=True)
+    wednesday = db.Column("Wednesday", db.String(255), nullable=True)
+    thursday = db.Column("Thursday", db.String(255), nullable=True)
+    friday = db.Column("Friday", db.String(255), nullable=True)
+    saturday = db.Column("Saturday", db.String(255), nullable=True)
+    created_at = db.Column("CreatedAt", db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column("UpdatedAt", db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+
+    def to_dict(self):
+        return {
+            "userID": self.user_id,  # Use self.user_id
+            "sunday": self.sunday.split(",") if self.sunday else [],
+            "monday": self.monday.split(",") if self.monday else [],
+            "tuesday": self.tuesday.split(",") if self.tuesday else [],
+            "wednesday": self.wednesday.split(",") if self.wednesday else [],
+            "thursday": self.thursday.split(",") if self.thursday else [],
+            "friday": self.friday.split(",") if self.friday else [],
+            "saturday": self.saturday.split(",") if self.saturday else [],
+            "createdAt": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "updatedAt": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None
         }

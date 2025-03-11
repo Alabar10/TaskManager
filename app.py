@@ -1,21 +1,21 @@
 import os
-from flask import Flask, app, jsonify, request, session, make_response, url_for
-from flask_cors import CORS  # Importing CORS
+from flask import Flask, jsonify, request, session, make_response, url_for
+from flask_cors import CORS, cross_origin  # Importing CORS
 from flask_sqlalchemy import SQLAlchemy
 import pyodbc
-from sqlalchemy import exists
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
-from itsdangerous import URLSafeTimedSerializer as Serializer
 import logging
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
-from abc import ABC, abstractmethod
 from dotenv import load_dotenv
-from models import db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association
+from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association,UserFreeSchedule
 from extensions import db, mail, jwt
-import re
+import logging
+import numpy as np
+import tensorflow as tf  
+import joblib  
 
 # Load environment variables
 load_dotenv()
@@ -35,8 +35,13 @@ def create_app():
 
     # Database ORM configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
+
+    if not app.config['SQLALCHEMY_DATABASE_URI']:
+        raise RuntimeError("❌ DATABASE URI NOT FOUND! Check your .env file.")
+    
+
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ECHO'] = True
+    app.config['SQLALCHEMY_ECHO'] = False
 
     # JWT Authentication setup
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
@@ -47,41 +52,34 @@ def create_app():
     jwt.init_app(app)
 
     # CORS setup
-    CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:8081"}})
+    CORS(app, supports_credentials=True, resources={r"/*": {"origins": ["http://localhost:8081", "http://192.168.1.42:8081", "*"]}})
+
+    # Register the custom MSE loss function before loading the model
+    custom_objects = {"mse": tf.keras.losses.MeanSquaredError()}
+
+    try:
+        app.config["MODEL"] = tf.keras.models.load_model("AI/task_prediction_model.h5", custom_objects=custom_objects)
+        app.config["SCALER"] = joblib.load("AI/scaler.pkl")  # Load scaler
+        print("✅ AI Model and Scaler Loaded Successfully!")
+    except Exception as e:
+        print(f"❌ Error loading model or scaler: {e}")
+        app.config["MODEL"] = None
+        app.config["SCALER"] = None
+
 
     @app.after_request
     def add_cors_headers(response):
-        if 'Access-Control-Allow-Origin' not in response.headers:
-            response.headers['Access-Control-Allow-Origin'] = 'http://localhost:8081'
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')  # Dynamic origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         return response
 
+        
     register_routes(app)
 
     return app
 
-# ==================================================== SQLHelper-Class ======================================================= #
-class SQLHelper(ABC):
-    connection = None  # connection string for SQL server database
-    cursor = None  # cursor for executing SQL commands
-
-    # method for connecting to SQL server database
-    def connect(self):
-        # load environment variables from env file
-        load_dotenv()
-        # getting necessary database credentials from env file for database connection
-        connectionString = os.getenv('DB_CONNECTION_STRING')
-        self.connection = pyodbc.connect(connectionString)
-        self.cursor = self.connection.cursor()  # initialize cursor 
-
-    # method for closing database connection
-    def close(self):
-        if self.cursor:
-            self.cursor.close()
-        if self.connection:
-            self.connection.close()
 
 # ==================================================== Routes ======================================================= #
 def register_routes(app):
@@ -234,16 +232,46 @@ def register_routes(app):
             db.session.rollback()  # Rollback changes in case of an error
             return jsonify({"message": f"Failed to update user info: {str(e)}"}), 500
 
-
-    @app.route('/tasks/delete/<int:task_id>', methods=['DELETE'])
+    @app.route("/tasks/<int:task_id>", methods=["DELETE"])
     def delete_task(task_id):
-        task = PersonalTask.query.get(task_id)
+        print(f"Received DELETE request for task ID: {task_id}")  # Debugging log
+
+        task = PersonalTask.query.get(task_id)  # ✅ Use the correct table
+
         if not task:
+            print(f"Task ID {task_id} not found!")  # Debugging log
             return jsonify({"error": "Task not found"}), 404
 
-        db.session.delete(task)
-        db.session.commit()
-        return jsonify({"message": "Task deleted successfully"}), 200
+        try:
+            db.session.delete(task)
+            db.session.commit()
+            print(f"Task {task_id} deleted successfully!")  # Debugging log
+            return jsonify({"message": "Task deleted successfully"}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": f"Failed to delete task: {str(e)}"}), 500
+
+
+    @app.route('/group-tasks/delete/<int:task_id>', methods=['DELETE'])
+    def delete_group_task(task_id):
+        task = GroupTask.query.get(task_id)
+        
+        if not task:
+            return jsonify({"error": "Group Task not found"}), 404
+
+        try:
+            # Remove any user associations for the task before deleting it
+            db.session.execute(task_user_association.delete().where(task_user_association.c.task_id == task_id))
+
+            db.session.delete(task)
+            db.session.commit()
+            return jsonify({"message": "Group Task deleted successfully"}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": f"Failed to delete group task: {str(e)}"}), 500
+
+
+
 
     @app.route('/change_password', methods=['POST'])
     def change_password():
@@ -280,14 +308,9 @@ def register_routes(app):
 
     @app.route('/tasks/dates', methods=['GET'])
     def get_tasks_by_date_range():
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-
-        if not start_date or not end_date:
-            return jsonify({"message": "Missing start_date or end_date parameters"}), 400
-
         try:
-            tasks = PersonalTask.query.filter(PersonalTask.due_date.between(start_date, end_date)).all()
+            # Fetch all tasks without filtering by date range
+            tasks = PersonalTask.query.all()
             task_list = [task.to_dict() for task in tasks]
             return jsonify(task_list), 200
         except Exception as e:
@@ -301,11 +324,13 @@ def register_routes(app):
         
         if not data or not data.get('title'):
             return jsonify({'message': 'Title is required'}), 400
-        
+        created_at = datetime.utcnow()
+        due_date = data.get('due_date', created_at)
+
         new_task = PersonalTask(
             title=data['title'],
             description=data.get('description'),
-            due_date=data.get('due_date'),
+            due_date=due_date,
             deadline=data.get('deadline'),
             priority=data.get('priority'),
             status=data.get('status'),
@@ -319,6 +344,15 @@ def register_routes(app):
         except Exception as e:
             db.session.rollback()
             return jsonify({'message': 'Unable to create task', 'error': str(e)}), 500
+
+    @app.route('/tasks/<int:task_id>', methods=['GET'])
+    def get_task(task_id):
+        """Fetch a personal task by ID."""
+        task = PersonalTask.query.get(task_id)  # Ensure PersonalTask is your Task model
+        if not task:
+            return jsonify({"error": "Task not found"}), 404
+        return jsonify(task.to_dict()), 200  # Ensure PersonalTask has a `to_dict()` method
+
 
 
 
@@ -343,21 +377,35 @@ def register_routes(app):
             return jsonify({"error": "Task not found"}), 404
 
         data = request.get_json()
+
         try:
-            # Update task fields from the request, retaining current values if not specified
-            task.title = data.get('title', task.title)
-            task.description = data.get('description', task.description)
-            task.priority = data.get('priority', task.priority)
-            task.status = data.get('status', task.status)
-            task.due_date = data.get('due_date', task.due_date)
-            task.deadline = data.get('deadline', task.deadline)
-            
+            print(f"🔍 Before Update: {task.to_dict()}")  # Log the task before update
+
+            # ✅ Ensure status updates
+            if "status" in data:
+                print(f"🔍 Updating status from {task.status} ➝ {data['status']}")
+                task.status = data["status"]  # Update the status directly
+                # No need to add task again, just commit changes
+
+
+
+            # ✅ Update other fields
+            task.title = data.get("title", task.title)
+            task.description = data.get("description", task.description)
+            task.priority = data.get("priority", task.priority)
+            task.due_date = data.get("due_date", task.due_date)
+            task.deadline = data.get("deadline", task.deadline)
+
             db.session.commit()
-            return jsonify(task.to_dict()), 200  # Ensure that your task model has a to_dict method to serialize its data
+
+            print(f"✅ After Update: {task.to_dict()}")
+
+            return jsonify(task.to_dict()), 200  
 
         except SQLAlchemyError as e:
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
+
 
 
     @app.route('/groups', methods=['GET'])
@@ -408,8 +456,6 @@ def register_routes(app):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
-
     @app.route('/groups/<int:group_id>/tasks', methods=['GET'])
     def get_group_tasks(group_id):
         group = Group.query.get(group_id)
@@ -429,28 +475,48 @@ def register_routes(app):
             print(f"Debug: Error occurred while fetching tasks for group {group_id}: {str(e)}")  # Debug log
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/groups/<int:group_id>/tasks/<int:task_id>', methods=['GET'])
+    def get_single_group_task(group_id, task_id):
+        group = Group.query.get(group_id)
+        if not group:
+            return jsonify({"message": "Group not found."}), 404
+
+        # ✅ Find the specific task within the group
+        task = next((task for task in group.tasks if task.id == task_id), None)
+
+        if not task:
+            return jsonify({"message": "Task not found in this group."}), 404
+
+        return jsonify(task.to_dict()), 200
+
+
 
 
     @app.route('/groups/<int:group_id>', methods=['DELETE'])
     def delete_group(group_id):
-        # Fetch the group from the database
         group = Group.query.get(group_id)
         if not group:
             return jsonify({"message": "Group not found"}), 404
 
-        # Check if the current user is the creator of the group
         user_id = request.headers.get('User-ID')
         if not user_id or int(user_id) != group.created_by:
             return jsonify({"message": "Unauthorized. Only the group creator can delete the group"}), 403
 
         try:
-            # Delete the group
+            # Delete all associated group tasks first
+            GroupTask.query.filter_by(group_id=group_id).delete()
+
+            # Delete group-user associations
+            db.session.execute(group_user_association.delete().where(group_user_association.c.group_id == group_id))
+
+            # Delete the group itself
             db.session.delete(group)
             db.session.commit()
             return jsonify({"message": "Group deleted successfully"}), 200
         except Exception as e:
             db.session.rollback()
             return jsonify({"message": f"Failed to delete group: {str(e)}"}), 500
+
 
 
 
@@ -495,30 +561,34 @@ def register_routes(app):
             db.session.rollback()
             return jsonify({"message": f"Failed to add group: {str(e)}"}), 500
 
-        
-
-
-
-
-    
-
-
 
     @app.route('/group-tasks', methods=['POST'])
     def create_group_task():
         data = request.get_json()
+
+        required_fields = ["title", "description", "group_id", "priority", "status"]
+        missing_fields = [field for field in required_fields if not data.get(field)]
+
+        if missing_fields:
+            return jsonify({"message": "Missing required fields", "missing": missing_fields}), 400
+
         title = data.get('title')
         description = data.get('description')
         group_id = data.get('group_id')
-        due_date = data.get('due_date')
         priority = data.get('priority')
         status = data.get('status')
+        created_at = datetime.utcnow()
 
-        # Check if required fields are provided
-        if not title or not description or not group_id or not due_date or not priority or not status:
-            return jsonify({"message": "Missing required fields"}), 400
+        due_date = data.get('due_date', created_at)
+        if due_date and isinstance(due_date, str):
+            try:
+                due_date = datetime.strptime(due_date, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                return jsonify({"message": "Invalid date format. Expected ISO 8601 (YYYY-MM-DDTHH:MM:SS)"}), 400
 
+        print(f"📩 Creating new group task with data: {data}")  # Log the incoming data
         new_task = GroupTask(
+
             title=title,
             description=description,
             group_id=group_id,
@@ -530,12 +600,56 @@ def register_routes(app):
         try:
             db.session.add(new_task)
             db.session.commit()
+            print(f"✅ Group task created successfully: {new_task.to_dict()}")  # Log success
             return jsonify({"message": "Group task created successfully", "task": new_task.to_dict()}), 201
+
         except Exception as e:
             db.session.rollback()
             return jsonify({"message": "Failed to create task", "error": str(e)}), 500
 
-    
+
+
+    @app.route('/groups/<int:group_id>/tasks/<int:task_id>', methods=['PUT'])
+    def update_group_task(group_id, task_id):
+        print(f"🔍 Looking for group ID: {group_id}")
+        group = Group.query.get(group_id)
+
+        if not group:
+            print("❌ Group not found!")
+            return jsonify({"message": "Group not found."}), 404
+
+        print(f"🔍 Looking for task ID: {task_id} in group {group_id}")
+        task = GroupTask.query.filter_by(id=task_id, group_id=group_id).first()  # ✅ Ensure GroupTask is used
+
+        if not task:
+            print("❌ Task not found in group!")
+            return jsonify({"message": "Task not found in this group."}), 404
+
+        data = request.get_json()
+        print(f"📩 Received Data: {data}")  # ✅ Debugging log
+
+        # Update the task fields
+        task.title = data.get('title', task.title)
+        task.description = data.get('description', task.description)
+        task.priority = data.get('priority', task.priority)
+        task.status = data.get('status', task.status)  # ✅ Ensure this is updated
+        task.due_date = data.get('due_date', task.due_date)
+        task.deadline = data.get('deadline', task.deadline)
+
+        print(f"🔄 Updating status from {task.status} ➝ {data.get('status')}")  # ✅ Debugging log
+
+        try:
+            db.session.commit()
+            print(f"✅ After Update: {task.to_dict()}")  # ✅ Log after update
+            return jsonify(task.to_dict()), 200
+        except Exception as e:
+            db.session.rollback()
+            print(f"🚨 Database Commit Error: {str(e)}")  # Log database error
+            return jsonify({"error": str(e)}), 500
+
+
+
+
 
     @app.route('/search_users', methods=['GET'])
     def search_users():
@@ -630,9 +744,153 @@ def register_routes(app):
             return jsonify({"error": "Failed to fetch tasks from the database"}), 500  
 
 
+    @app.route('/schedule/<int:user_id>', methods=['GET'])
+    def get_user_schedule(user_id):
+        try:
+            user_schedule = UserFreeSchedule.query.filter_by(user_id=user_id).first()  # Use user_id
+
+            if not user_schedule:
+                print(f"⚠️ No schedule found for user {user_id}. Returning empty schedule.")
+                return jsonify({
+                    "userID": user_id,
+                    "sunday": [],
+                    "monday": [],
+                    "tuesday": [],
+                    "wednesday": [],
+                    "thursday": [],
+                    "friday": [],
+                    "saturday": [],
+                    "message": "No schedule found, returning an empty schedule."
+                }), 200
+
+            return jsonify(user_schedule.to_dict()), 200
+
+        except Exception as e:
+            print(f"❌ ERROR: {str(e)}")
+            return jsonify({"error": "Internal server error", "message": str(e)}), 500
 
 
+        
+    @app.route('/schedule/<int:user_id>', methods=['PUT'])
+    def edit_user_schedule(user_id):
+        data = request.get_json(force=True)
 
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        try:
+            user_schedule = UserFreeSchedule.query.filter_by(user_id=user_id).first()
+
+            if not user_schedule:
+                print(f"⚠️ No schedule found for user {user_id}. Creating a new one.")
+                user_schedule = UserFreeSchedule(
+                    user_id=user_id,
+                    sunday="",
+                    monday="",
+                    tuesday="",
+                    wednesday="",
+                    thursday="",
+                    friday="",
+                    saturday=""
+                )
+                db.session.add(user_schedule)
+                db.session.commit()  # Save new schedule to database
+
+            for day in ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]:
+                if day in data:
+                    if isinstance(data[day], list):  # Ensure it's a list
+                        setattr(user_schedule, day, ",".join(data[day]))  
+                    else:
+                        return jsonify({"error": f"Invalid format for {day}. Expected a list."}), 400
+
+            user_schedule.updated_at = datetime.utcnow()  
+            db.session.commit()
+
+            print(f"✅ Schedule updated successfully for user {user_id}")
+            return jsonify({"message": "Schedule updated successfully"}), 200
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ ERROR: {str(e)}")
+            return jsonify({"error": "Internal server error", "message": str(e)}), 500
+
+
+    @app.route('/groups/<int:group_id>/members', methods=['GET'])
+    def get_group_members(group_id):
+        """
+        Retrieve all members of a specific group.
+        """
+        try:
+            group = Group.query.filter_by(id=group_id).first()
+            
+            if not group:
+                return jsonify({"error": "Group not found"}), 404
+
+            members = group.members  # This comes from the relationship in your Group model
+
+            members_list = [
+                {
+                    "userId": member.userId,
+                    "username": member.username,
+                    "email": member.email,
+                    "fname": member.fname,
+                    "lname": member.lname
+                }
+                for member in members
+            ]
+
+            return jsonify(members_list), 200
+
+        except Exception as e:
+            return jsonify({"error": f"Error fetching group members: {str(e)}"}), 500
+
+    @app.route('/groups/<int:group_id>', methods=['GET'])
+    def get_group_details(group_id):
+        """
+        Retrieve group details, including the creator ID.
+        """
+        try:
+            group = Group.query.filter_by(id=group_id).first()
+            
+            if not group:
+                return jsonify({"error": "Group not found"}), 404
+
+            return jsonify({
+                "id": group.id,
+                "name": group.name,
+                "created_by": group.created_by  # This is the creator's userId
+            }), 200
+
+        except Exception as e:
+            return jsonify({"error": f"Error fetching group details: {str(e)}"}), 500
+        
+
+
+    @app.route("/predict-task-time", methods=["POST"])
+    def predict_task_time():
+        """API Endpoint to predict task completion time based on priority."""
+        try:
+            model = app.config.get("MODEL")  # Get model from app config
+            scaler = app.config.get("SCALER")  # Get scaler from app config
+
+            if model is None or scaler is None:
+                return jsonify({"error": "AI Model or Scaler not loaded"}), 500
+
+            data = request.json  # Get JSON request
+            priority = data.get("priority")  # Extract priority value
+
+            if priority is None or not (1 <= priority <= 4):
+                return jsonify({"error": "Invalid priority value. Must be between 1 and 4."}), 400
+
+            # Prepare input for model
+            priority_input = np.array([[priority]])
+            predicted_time_scaled = model.predict(priority_input)
+            predicted_time = scaler.inverse_transform(predicted_time_scaled)[0][0]  # Convert back to minutes
+
+            return jsonify({"predicted_time": float(round(predicted_time, 2))})  # Convert to Python float
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
 
 
@@ -648,6 +906,6 @@ if __name__ == '__main__':
             logging.info("Database tables created successfully.")
 
         logging.info("Starting the web server...")
-        app.run(host=os.getenv('HOST_IP', '0.0.0.0'), port=5000)
+        app.run(host=os.getenv('HOST_IP', '0.0.0.0'), port=5000,debug=True)
     except Exception as e:
         logging.error(f"Failed to start the application: {e}")
