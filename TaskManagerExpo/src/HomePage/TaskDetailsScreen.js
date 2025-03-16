@@ -50,7 +50,10 @@ const TaskDetailsScreen = ({ route, navigation }) => {
   const [tempTime, setTempTime] = useState(new Date());
   const statusOptions = ["To Do", "In Progress", "Done"];
   const [showStatusModal, setShowStatusModal] = useState(false);
-
+  const categoryOptions = ['reading', 'coding', 'writing', 'exercising', 'General'];
+  const [category, setCategory] = useState(initialTask.category || "General");
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  
 
   
 
@@ -127,6 +130,10 @@ const handleSave = async () => {
     status: status,  
     due_date: formatDate(dueDate),
     deadline: formatDate(deadline),
+    category,
+    start_time: status === "In Progress" && !task.start_time ? new Date().toISOString() : task.start_time, // ✅ Set start_time when task starts
+    actual_time: status === "Done" ? new Date().toISOString() : task.actual_time, 
+
   };
 
   console.log("🔍 Saving Task Data:", JSON.stringify(updatedTask, null, 2));
@@ -356,6 +363,13 @@ const handleSave = async () => {
         priority,
         () => setShowPriorityModal(true)
       )}
+      {renderRow(
+  <FontAwesome5 name="layer-group" size={20} color="#6A5ACD" />,
+  "Category",
+  category,
+  () => setShowCategoryModal(true) // Open category selection modal
+)}
+
   
 {/* Priority Modal */}
 <Modal animationType="slide" transparent visible={showPriorityModal} onRequestClose={() => setShowPriorityModal(false)}>
@@ -407,6 +421,27 @@ const handleSave = async () => {
     </View>
   </View>
 </Modal>
+<Modal animationType="slide" transparent visible={showCategoryModal} onRequestClose={() => setShowCategoryModal(false)}>
+  <View style={styles.modalOverlay}>
+    <View style={[styles.bottomSheet, { height: '40%' }]}>
+      <Text style={[styles.modalTitle, { fontSize: 20 }]}>Select Category</Text>
+      <Picker
+        selectedValue={category}
+        onValueChange={(itemValue) => setCategory(itemValue)}
+        style={[styles.picker, { height: 200, width: 250, marginVertical: 20 }]}
+        itemStyle={{ color: 'black', fontSize: 18 }}
+      >
+        {categoryOptions.map((option, index) => (
+          <Picker.Item key={index} label={option} value={option} />
+        ))}
+      </Picker>
+      <TouchableOpacity style={styles.doneButton} onPress={() => setShowCategoryModal(false)}>
+        <Text style={styles.buttonText}>Done</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+
 
 
   

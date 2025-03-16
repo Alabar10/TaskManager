@@ -1,25 +1,24 @@
 import tensorflow as tf
 import joblib
 import numpy as np
+import pandas as pd
+from flask import Flask, request, jsonify
+import os
 
-# Define custom objects (needed to load the model correctly)
-custom_objects = {
-    "mse": tf.keras.losses.MeanSquaredError()
-}
+# ✅ Correct Model Path
+MODEL_PATH = os.path.abspath("AI/task_prediction_model.keras")
 
-# Load the saved model and scaler
-model = tf.keras.models.load_model("task_prediction_model.h5", custom_objects=custom_objects)
-scaler = joblib.load("scaler.pkl")
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError("❌ Model file not found at AI/task_prediction_model.keras. Run `python task_prediction.py` first.")
 
-def predict_task_time(priority):
-    """Predicts estimated task completion time based on priority."""
-    priority = np.array([[priority]])  # Ensure correct shape
-    predicted_time_scaled = model.predict(priority)
-    predicted_time = scaler.inverse_transform(predicted_time_scaled)[0][0]  # Convert back to minutes
-    return round(predicted_time, 2)  # Return rounded value
+# ✅ Load the trained model
+model = tf.keras.models.load_model(MODEL_PATH)
 
-# Example Test
-if __name__ == "__main__":
-    test_priority = 2  # Change this value to test different priorities
-    prediction = predict_task_time(test_priority)
-    print(f"Predicted estimated time for priority {test_priority}: {prediction} minutes")
+# ✅ Load encoders and scalers
+category_encoder = joblib.load("AI/category_encoder.pkl")
+feature_scaler = joblib.load("AI/feature_scaler.pkl")
+time_scaler = joblib.load("AI/time_scaler.pkl")
+
+# ✅ Initialize Flask app
+app = Flask(__name__)
+

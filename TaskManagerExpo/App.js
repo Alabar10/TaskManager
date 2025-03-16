@@ -31,6 +31,7 @@ import GroupMembersScreen from "./src/GroupTask/GroupMembersScreen";
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
+const DataPlaceholder = () => <View />;
 
 // Custom Drawer Content
 const CustomDrawerContent = (props) => {
@@ -99,7 +100,7 @@ const TabNavigator = () => (
     <Tab.Screen name="Home" component={HomePage} />
     <Tab.Screen name="Calendar" component={require("./src/Calendar/CalendarScreen").default} />
     <Tab.Screen name="Schedule" component={Schedule} />
-    <Tab.Screen name="data" component={() => <View />} />
+    <Tab.Screen name="data" component={DataPlaceholder} />
     </Tab.Navigator>
 );
 

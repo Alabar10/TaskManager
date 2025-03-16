@@ -33,22 +33,41 @@ class PersonalTask(db.Model):
     priority = db.Column(db.Integer, nullable=False)  # Values 1-4 only
     status = db.Column(db.String(50))
     user_id = db.Column(db.Integer, db.ForeignKey('Users.userId'))
+    category = db.Column(db.String(100), nullable=False, default="General")  # New column
+    actual_time = db.Column(db.DateTime, nullable=True)  
+    start_time = db.Column(db.DateTime, nullable=True)   
+    time_taken = db.Column(db.String(50), nullable=True)  # ✅ Store formatted time taken
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
     def to_dict(self):
-        return {
-            "id": self.id,
-            "title": self.title,
-            "description": self.description,
-            "due_date": self.due_date.strftime("%Y-%m-%d %H:%M:%S") if self.due_date else None,
-            "deadline": self.deadline.strftime("%Y-%m-%d %H:%M:%S") if self.deadline else None,
-            "priority": PRIORITY_CHOICES.get(self.priority, "Unknown"),
-            "status": self.status,
-            "user_id": self.user_id,
-            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
-            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
-        }
+            time_taken = None
+            formatted_time = None
+
+            if self.actual_time and self.start_time:
+                time_taken = (self.actual_time - self.start_time).total_seconds() / 3600  # Get time in hours
+                
+                # Convert to "X hours, Y minutes" format
+                hours = int(time_taken)
+                minutes = int((time_taken - hours) * 60)
+                formatted_time = f"{hours} hours, {minutes} minutes"
+                
+            return {
+                "id": self.id,
+                "title": self.title,
+                "description": self.description,
+                "due_date": self.due_date.strftime("%Y-%m-%d %H:%M:%S") if self.due_date else None,
+                "deadline": self.deadline.strftime("%Y-%m-%d %H:%M:%S") if self.deadline else None,
+                "priority": PRIORITY_CHOICES.get(self.priority, "Unknown"),
+                "status": self.status,
+                "user_id": self.user_id,
+                "category": self.category, 
+                "actual_time": self.actual_time.strftime("%Y-%m-%d %H:%M:%S") if self.actual_time else None,
+                "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.start_time else None,
+                "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+                "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+                "time_taken": formatted_time if formatted_time else None  
+            }
     
     
 class Task(db.Model):
@@ -170,3 +189,4 @@ class UserFreeSchedule(db.Model):
             "createdAt": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
             "updatedAt": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None
         }
+    

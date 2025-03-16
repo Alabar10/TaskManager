@@ -1,4 +1,6 @@
+from json import encoder
 import os
+from pyexpat import model
 from flask import Flask, jsonify, request, session, make_response, url_for
 from flask_cors import CORS, cross_origin  # Importing CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -7,20 +9,23 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
 import logging
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from datetime import datetime
+from datetime import datetime,timedelta
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association,UserFreeSchedule
 from extensions import db, mail, jwt
 import logging
 import numpy as np
-import tensorflow as tf  
+import tensorflow as tf,keras  
 import joblib  
+from sqlalchemy import text
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
 
 def create_app():
+
     # Application setup
     app = Flask(__name__)
     app.secret_key = os.getenv('FLASK_APP_SECRET_KEY')
@@ -53,18 +58,59 @@ def create_app():
 
     # CORS setup
     CORS(app, supports_credentials=True, resources={r"/*": {"origins": ["http://localhost:8081", "http://192.168.1.42:8081", "*"]}})
+# ============================= 🧠 Load AI Model and Encoders ============================= #
 
-    # Register the custom MSE loss function before loading the model
-    custom_objects = {"mse": tf.keras.losses.MeanSquaredError()}
+    print("📌 Checking AI Model and Encoders Before Loading...")
+
+    # ✅ Define Paths
+    model_path = "AI/task_prediction_model.keras"  # Ensure correct file extension
+    category_encoder_path = "AI/category_encoder.pkl"
+    feature_scaler_path = "AI/feature_scaler.pkl"
+    time_scaler_path = "AI/time_scaler.pkl"
+
+    # ✅ Debug: Check if files exist
+    missing_files = [file for file in [model_path, category_encoder_path, feature_scaler_path, time_scaler_path] if not os.path.exists(file)]
+
+    if missing_files:
+        print(f"❌ Missing AI files: {missing_files}")
+        raise FileNotFoundError(f"Required AI files missing: {missing_files}")
 
     try:
-        app.config["MODEL"] = tf.keras.models.load_model("AI/task_prediction_model.h5", custom_objects=custom_objects)
-        app.config["SCALER"] = joblib.load("AI/scaler.pkl")  # Load scaler
-        print("✅ AI Model and Scaler Loaded Successfully!")
+        # ✅ Load Model
+        print("🔄 Loading AI model...")
+        model = tf.keras.models.load_model(model_path)
+        print("✅ Model loaded successfully!")
+
+        # ✅ Load Category Encoder
+        print("🔄 Loading category encoder...")
+        category_encoder = joblib.load(category_encoder_path)
+        print(f"✅ Category Encoder Loaded!")
+
+        # ✅ Load Feature Scaler
+        print("🔄 Loading feature scaler...")
+        feature_scaler = joblib.load(feature_scaler_path)
+        print(f"✅ Feature Scaler Loaded! Expected Features: {feature_scaler.n_features_in_}")
+
+        # ✅ Load Time Scaler
+        print("🔄 Loading time scaler...")
+        time_scaler = joblib.load(time_scaler_path)
+        print(f"✅ Time Scaler Loaded!")
+
+        # ✅ Store AI components in Flask app config
+        app.config["MODEL"] = model
+        app.config["CATEGORY_ENCODER"] = category_encoder
+        app.config["FEATURE_SCALER"] = feature_scaler
+        app.config["TIME_SCALER"] = time_scaler
+
+        print("✅ AI Model and Encoders Loaded Successfully!")
+
     except Exception as e:
-        print(f"❌ Error loading model or scaler: {e}")
+        print(f"❌ Error loading AI Model or Encoders: {e}")
         app.config["MODEL"] = None
-        app.config["SCALER"] = None
+        app.config["CATEGORY_ENCODER"] = None
+        app.config["FEATURE_SCALER"] = None
+        app.config["TIME_SCALER"] = None
+
 
 
     @app.after_request
@@ -79,7 +125,6 @@ def create_app():
     register_routes(app)
 
     return app
-
 
 # ==================================================== Routes ======================================================= #
 def register_routes(app):
@@ -334,7 +379,8 @@ def register_routes(app):
             deadline=data.get('deadline'),
             priority=data.get('priority'),
             status=data.get('status'),
-            user_id=data.get('user_id')
+            category = data.get('category', 'General'),  
+            user_id=data.get('user_id'),
         )
         
         db.session.add(new_task)
@@ -379,32 +425,47 @@ def register_routes(app):
         data = request.get_json()
 
         try:
-            print(f"🔍 Before Update: {task.to_dict()}")  # Log the task before update
+            print(f"🔍 Before Update: {task.to_dict()}")  # Debugging before update
 
-            # ✅ Ensure status updates
+            # ✅ Ensure status updates correctly
             if "status" in data:
-                print(f"🔍 Updating status from {task.status} ➝ {data['status']}")
-                task.status = data["status"]  # Update the status directly
-                # No need to add task again, just commit changes
+                new_status = data["status"]
+                print(f"🔍 Updating status from {task.status} ➝ {new_status}")
 
+                if new_status == "In Progress" and not task.start_time:
+                    # ✅ Set start_time ONLY when first moved to "In Progress"
+                    task.start_time = datetime.utcnow()
+                    print(f"⏳ Start Time Set: {task.start_time}")
 
+                elif new_status == "Done" and task.start_time:
+                    # ✅ Set actual_time and calculate time_taken when moving to "Done"
+                    task.actual_time = datetime.utcnow()
+                    time_diff = task.actual_time - task.start_time
+                    hours = time_diff.total_seconds() // 3600
+                    minutes = (time_diff.total_seconds() % 3600) // 60
+                    task.time_taken = f"{int(hours)} hours, {int(minutes)} minutes"
+                    print(f"✅ Time Taken: {task.time_taken}")
 
-            # ✅ Update other fields
+                task.status = new_status  # Update status
+
+            # ✅ Update other task fields
             task.title = data.get("title", task.title)
             task.description = data.get("description", task.description)
             task.priority = data.get("priority", task.priority)
             task.due_date = data.get("due_date", task.due_date)
             task.deadline = data.get("deadline", task.deadline)
+            task.category = data.get("category", task.category)
 
             db.session.commit()
-
             print(f"✅ After Update: {task.to_dict()}")
 
             return jsonify(task.to_dict()), 200  
 
         except SQLAlchemyError as e:
             db.session.rollback()
+            print(f"🚨 Error updating task: {str(e)}")
             return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -864,36 +925,97 @@ def register_routes(app):
         except Exception as e:
             return jsonify({"error": f"Error fetching group details: {str(e)}"}), 500
         
+ # ============================= 📌 AI Prediction API Endpoint ============================= #
+    
+    
+    
+    @app.before_request
+    def ensure_model_loaded():
+        """ Ensures model and encoders are available before handling a request. """
+        if app.config.get("MODEL") is None:
+            print("🔄 Re-loading AI model due to missing config...")
+            try:
+                app.config["MODEL"] = tf.keras.models.load_model("AI/task_prediction_model.keras")
+                app.config["CATEGORY_ENCODER"] = joblib.load("AI/category_encoder.pkl")
+                app.config["FEATURE_SCALER"] = joblib.load("AI/feature_scaler.pkl")
+                app.config["TIME_SCALER"] = joblib.load("AI/time_scaler.pkl")
+                print("✅ AI Model and Encoders Re-loaded!")
+            except Exception as e:
+                print(f"❌ Error reloading AI Model: {e}")
 
 
-    @app.route("/predict-task-time", methods=["POST"])
+    
+    
+    
+    
+    
+    
+    
+    
+    @app.route("/predict", methods=["POST"])
     def predict_task_time():
-        """API Endpoint to predict task completion time based on priority."""
         try:
-            model = app.config.get("MODEL")  # Get model from app config
-            scaler = app.config.get("SCALER")  # Get scaler from app config
+            data = request.get_json()
+            print(f"🔍 Incoming data: {data}")
 
-            if model is None or scaler is None:
-                return jsonify({"error": "AI Model or Scaler not loaded"}), 500
+            # Retrieve AI components from Flask config
+            model = app.config.get("MODEL")
+            category_encoder = app.config.get("CATEGORY_ENCODER")
+            feature_scaler = app.config.get("FEATURE_SCALER")
+            time_scaler = app.config.get("TIME_SCALER")
 
-            data = request.json  # Get JSON request
-            priority = data.get("priority")  # Extract priority value
+            if not all([model, category_encoder, feature_scaler, time_scaler]):
+                return jsonify({"error": "AI model or encoders are not available. Try restarting the server."}), 500
 
-            if priority is None or not (1 <= priority <= 4):
-                return jsonify({"error": "Invalid priority value. Must be between 1 and 4."}), 400
+            # Extract inputs with validation
+            category = data.get("category")
+            priority = data.get("priority")
+            estimated_time = data.get("estimated_time")
+            start_time = data.get("start_time")
 
-            # Prepare input for model
-            priority_input = np.array([[priority]])
-            predicted_time_scaled = model.predict(priority_input)
-            predicted_time = scaler.inverse_transform(predicted_time_scaled)[0][0]  # Convert back to minutes
+            if not all([category, priority, estimated_time, start_time]):
+                return jsonify({"error": "Missing required fields: category, priority, estimated_time, start_time"}), 400
 
-            return jsonify({"predicted_time": float(round(predicted_time, 2))})  # Convert to Python float
+            try:
+                priority = int(priority)
+                estimated_time = float(estimated_time)
+                start_time = pd.to_datetime(start_time).hour
+            except ValueError:
+                return jsonify({"error": "Invalid data type for priority, estimated_time, or start_time"}), 400
+
+            # Encode category
+            if category not in category_encoder.classes_:
+                return jsonify({"error": f"Unknown category: {category}. Available: {list(category_encoder.classes_)}"}), 400
+
+            category_encoded = category_encoder.transform([category])[0]
+
+            # Prepare input data
+            input_data = np.array([[category_encoded, priority, estimated_time, start_time]])
+            print(f"🔍 Processed Input Data: {input_data}")
+
+            # Scale input
+            input_data_df = pd.DataFrame(input_data, columns=["category_encoded", "priority", "estimated_time", "start_time"])
+            input_data_scaled = feature_scaler.transform(input_data)
+            input_data_scaled = input_data_scaled.reshape(1, -1)  # Ensure shape is (1, 4)
+            print(f"🔍 Scaled Input Data: {input_data_scaled}")
+
+            # Predict
+            predicted_time_scaled = model.predict(input_data_scaled)
+            # Inverse transform the prediction
+            predicted_time = time_scaler.inverse_transform(predicted_time_scaled.reshape(-1, 1))[0][0]
+
+            # Convert NumPy float32 to native float
+            predicted_time = float(predicted_time)
+            print(f"✅ Predicted Time (Minutes): {predicted_time}")
+
+            return jsonify({ "predicted_time_minutes": round(predicted_time, 2),"predicted_time_hours": round(predicted_time / 60, 2)})
 
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            print(f"❌ Error during prediction: {str(e)}")
+            return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 
-
+        
 
 # ==================================================== Main ========================================================== #
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -909,3 +1031,12 @@ if __name__ == '__main__':
         app.run(host=os.getenv('HOST_IP', '0.0.0.0'), port=5000,debug=True)
     except Exception as e:
         logging.error(f"Failed to start the application: {e}")
+
+
+
+
+
+
+
+
+

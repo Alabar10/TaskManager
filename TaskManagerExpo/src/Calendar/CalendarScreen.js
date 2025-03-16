@@ -173,7 +173,7 @@ const CalendarScreen = () => {
                   <View key={`personal-${index}`} style={styles.taskCard}>
                     <Text style={styles.taskTitle}>{task.title || 'No Title'}</Text>
                     <Text style={styles.taskTime}>
-                      {task.dateType === 'deadline' ? 'Deadline: ' : 'Due Date: '}
+                      {task.dateType === 'deadline' ? 'Deadline: ' : 'open date: '}
                       {new Date(task.dateType === 'deadline' ? task.deadline : task.due_date).toLocaleString([], {
                         year: 'numeric', 
                         month: 'short', 
@@ -198,7 +198,7 @@ const CalendarScreen = () => {
                   <View key={`group-${index}`} style={styles.taskCard}>
                     <Text style={styles.taskTitle}>{task.title || 'No Title'}</Text>
                     <Text style={styles.taskTime}>
-                      {task.dateType === 'deadline' ? 'Deadline: ' : 'Due Date: '}
+                      {task.dateType === 'deadline' ? 'Deadline: ' : 'open date: '}
                       {new Date(task.dateType === 'deadline' ? task.deadline : task.due_date).toLocaleString([], {
                         year: 'numeric', 
                         month: 'short', 

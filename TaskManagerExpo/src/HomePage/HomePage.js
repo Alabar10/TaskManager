@@ -25,19 +25,19 @@ const HomePage = () => {
   const fetchData = async () => {
     setIsLoading(true);
     const userId = await AsyncStorage.getItem("userId");
-  
+
     if (!userId) {
       console.error("User ID not found");
       setIsLoading(false);
       return;
     }
-  
+
     console.log("API URL:", config.API_URL); // Debugging the API URL
-  
+
     try {
       let tasksData = [];
       let groupsData = [];
-  
+
       if (selectedTab === "Group") {
         // Fetch only group tasks
         const response = await axios.get(`${config.API_URL}/groups/user/${userId}`);
@@ -49,22 +49,22 @@ const HomePage = () => {
           axios.get(`${config.API_URL}/tasks/user/${userId}`),
           axios.get(`${config.API_URL}/groups/user/${userId}`),
         ]);
-  
+
         tasksData = tasksResponse.data.map(task => ({
           ...task,
           type: "task",
           status: task.status || "To Do", // Default status
         }));
-  
+
         groupsData = groupsResponse.data.map(group => ({
           ...group,
           type: "group",
         }));
-  
+
         // ✅ Structure data into sections
         setItems([
-          { title: "Personal Tasks", data: tasksData },
-          { title: "Group Tasks", data: groupsData }
+          { title: "Personal Tasks", data: tasksData || [] },
+          { title: "Group Tasks", data: groupsData || [] }
         ]);
       } else if (selectedTab === "Personal") {
         // Fetch only personal tasks
@@ -74,9 +74,10 @@ const HomePage = () => {
           type: "task",
           status: task.status || "To Do",
         }));
-        setItems(tasksData);
+        // Set items as a flat array for the "Personal" tab
+        setItems(tasksData || []);
       }
-  
+
       console.log("Fetched Items:", [...tasksData, ...groupsData]);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -84,8 +85,6 @@ const HomePage = () => {
       setIsLoading(false);
     }
   };
-  
-
 
   useFocusEffect(
     useCallback(() => {
@@ -104,42 +103,40 @@ const HomePage = () => {
   };
 
   const renderItem = ({ item }) => {
-    console.log("Rendering Item:", item); // ✅ Debug item data
 
     return (
-        <TouchableOpacity
-            style={styles.taskItem}
-            onPress={() => {
-                if (item.type === "group") {
-                    navigation.navigate("GroupTasks", {
-                        groupId: item.id,
-                        groupName: item.name,
-                    });
-                } else {
-                    navigation.navigate("TaskDetails", { task: item });
-                }
-            }}
-        >
-            <View style={styles.taskRow}>
-                <Text style={styles.taskTitle}>{item.name || item.title}</Text>
+      <TouchableOpacity
+        style={styles.taskItem}
+        onPress={() => {
+          if (item.type === "group") {
+            navigation.navigate("GroupTasks", {
+              groupId: item.id,
+              groupName: item.name,
+            });
+          } else {
+            navigation.navigate("TaskDetails", { task: item });
+          }
+        }}
+      >
+        <View style={styles.taskRow}>
+          <Text style={styles.taskTitle}>{item.name || item.title}</Text>
 
-                {/* ✅ Ensure status exists before rendering the icon */}
-                {item.type === "task" && item.status && statusIcons[item.status] && (
-                    <View style={styles.statusIconContainer}>
-                        {statusIcons[item.status]}
-                    </View>
-                )}
+          {/* ✅ Ensure status exists before rendering the icon */}
+          {item.type === "task" && item.status && statusIcons[item.status] && (
+            <View style={styles.statusIconContainer}>
+              {statusIcons[item.status]}
             </View>
+          )}
+        </View>
 
-            {item.type === "group" ? (
-                <Text style={styles.groupDetails}>Members: {item.members?.length || 0}</Text>
-            ) : (
-                <Text style={styles.taskDetails}>Created at: {item.due_date || "No Due Date"}</Text>
-            )}
-        </TouchableOpacity>
+        {item.type === "group" ? (
+          <Text style={styles.groupDetails}>Members: {item.members?.length || 0}</Text>
+        ) : (
+          <Text style={styles.taskDetails}>Created at: {item.due_date || "No Due Date"}</Text>
+        )}
+      </TouchableOpacity>
     );
   };
- 
 
   return (
     <View style={styles.container}>
@@ -170,14 +167,14 @@ const HomePage = () => {
           </Text>
         </TouchableOpacity>
       </View>
-  
+
       {/* Loading Indicator */}
       {isLoading ? (
         <ActivityIndicator size="large" color="#6A5ACD" />
       ) : selectedTab === "All" ? (
         <SectionList
-          sections={items} // ✅ Use sectioned data (Personal & Group tasks)
-          keyExtractor={(item) => `${item.id}-${item.type || item.name}`}
+          sections={items.filter(section => section && section.data && section.data.length > 0)} // Ensure sections have data
+          keyExtractor={(item) => item.id ? `${item.id}-${item.type}` : `${Math.random()}`} // Ensure unique keys
           renderItem={renderItem}
           renderSectionHeader={({ section: { title } }) => (
             <Text style={styles.sectionHeader}>{title}</Text>
@@ -189,7 +186,7 @@ const HomePage = () => {
       ) : (
         <FlatList
           data={items}
-          keyExtractor={(item) => `${item.id}-${item.type || item.name}`}
+          keyExtractor={(item) => item.id ? `${item.id}-${item.type}` : `${Math.random()}`} // Ensure unique keys
           renderItem={renderItem}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
@@ -198,7 +195,7 @@ const HomePage = () => {
           }
         />
       )}
-  
+
       {/* Floating Action Button to Add Tasks/Groups */}
       <TouchableOpacity
         style={styles.fab}
@@ -293,8 +290,8 @@ const styles = StyleSheet.create({
   },
   statusIconContainer: {
     alignSelf: "flex-end",
-    marginLeft: "auto", 
-    paddingRight: 10, 
+    marginLeft: "auto",
+    paddingRight: 10,
   },
   sectionHeader: {
     fontSize: 18,
@@ -303,7 +300,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     marginTop: 10,
-},
+  },
 });
 
 export default HomePage;
