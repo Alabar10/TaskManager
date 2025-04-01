@@ -28,6 +28,7 @@ import Schedule from './src/Schedule/schedule'
 import GroupMembersScreen from "./src/GroupTask/GroupMembersScreen";
 import BuildSchedule from "./src/AIScreen/BuildSchedule";
 import CurrentSchedule from "./src/AIScreen/CurrentSchedule";
+import ChatWithAI from "./src/AIScreen/ChatWithAI";
 
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
@@ -142,6 +143,7 @@ const App = () => (
             <Stack.Screen name="GroupMembers" component={GroupMembersScreen} />
             <Stack.Screen name="BuildSchedule" component={BuildSchedule} />
             <Stack.Screen name="CurrentSchedule" component={CurrentSchedule} />
+            <Stack.Screen name="AI Chat" component={ChatWithAI} />
             
           </Stack.Navigator>
         </NavigationContainer>

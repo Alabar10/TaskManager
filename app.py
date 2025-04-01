@@ -1,10 +1,8 @@
 from json import encoder
 import os
-from pyexpat import model
 from flask import Flask, jsonify, request, session, make_response, url_for
 from flask_cors import CORS, cross_origin  
 from flask_sqlalchemy import SQLAlchemy
-import pyodbc
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
 import logging
@@ -21,6 +19,9 @@ import joblib
 from sqlalchemy import text
 import pandas as pd
 import json
+from sqlalchemy.orm import joinedload
+from AI.AiChat import generate_ai_advice
+from transformers import pipeline
 
 # Load environment variables
 load_dotenv()
@@ -126,6 +127,7 @@ def create_app():
     routes(app)
 
     return app
+
 
 # ==================================================== Routes ======================================================= #
 def routes(app):
@@ -1242,7 +1244,43 @@ def routes(app):
             print(f"❌ Error generating schedule: {e}")
             return jsonify({"error": str(e)}), 500
 
-   
+
+
+    @app.route('/chat', methods=['POST'])
+    def chat_with_ai():
+        # Step 1: Parse incoming data
+        data = request.get_json()
+        user_id = data.get("user_id")
+        message = data.get("message", "")
+
+        # Step 2: Fetch user schedule
+        schedule_entry = UserSchedule.query.filter_by(user_id=user_id).first()
+        schedule_json = schedule_entry.schedule_json if schedule_entry else None
+
+        # Step 3: Fetch personal tasks
+        personal_tasks = [
+            task.to_dict() for task in PersonalTask.query.filter_by(user_id=user_id).all()
+        ]
+
+        # Fetch group tasks
+        group_tasks = [
+            task.to_dict()
+            for task in GroupTask.query.options(joinedload(GroupTask.assigned_users)).all()
+            if any(user.userId == int(user_id) for user in task.assigned_users)
+        ]
+
+        # Filter urgent tasks (due within 2 days)
+        urgent_tasks = [
+            t for t in personal_tasks + group_tasks
+            if t.get('deadline')
+            and datetime.strptime(t['deadline'], "%Y-%m-%d %H:%M:%S") <= datetime.utcnow() + timedelta(days=2)
+        ]
+
+
+
+        # Now pass urgent_tasks as an extra parameter
+        reply = generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urgent_tasks)
+        return jsonify({"reply": reply})
 
 
 # ==================================================== Main ========================================================== #

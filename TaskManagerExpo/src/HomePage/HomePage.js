@@ -15,7 +15,6 @@ import axios from "axios"; // Use Axios for better API handling
 import config from "../config"; // Adjust the path based on your file structure
 import { FontAwesome5 } from "@expo/vector-icons";
 import { SectionList } from "react-native";
-import { Modal } from "react-native";
 
 const HomePage = () => {
   const [items, setItems] = useState([]);
@@ -23,6 +22,15 @@ const HomePage = () => {
   const [selectedTab, setSelectedTab] = useState("All");
   const navigation = useNavigation();
   const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [isTabPressed, setIsTabPressed] = useState(null);
+  const [isFabPressed, setIsFabPressed] = useState(false);
+  const [isAiFabHovered, setIsAiFabHovered] = useState(false);
+  const [isBuildPressed, setIsBuildPressed] = useState(false);
+  const [isCurrentPressed, setIsCurrentPressed] = useState(false);
+  const [isChatPressed, setIsChatPressed] = useState(false);
+  const toggleAiModal = () => {
+    setAiModalVisible(!aiModalVisible);
+  };
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -143,29 +151,47 @@ const HomePage = () => {
     );
   };
 
-  return (
+    return (
     <View style={styles.container}>
       {/* Tabs for selecting Task type */}
       <View style={styles.tabsContainer}>
         <TouchableOpacity
-          style={[styles.tab, selectedTab === "All" && styles.activeTab]}
+          style={[
+            styles.tab, 
+            selectedTab === "All" && styles.activeTab,
+            isTabPressed === "All" && styles.tabPressed
+          ]}
           onPress={() => setSelectedTab("All")}
+          onPressIn={() => setIsTabPressed("All")}
+          onPressOut={() => setIsTabPressed(null)}
         >
           <Text style={[styles.tabText, selectedTab === "All" && styles.activeTabText]}>
             All
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, selectedTab === "Personal" && styles.activeTab]}
+          style={[
+            styles.tab, 
+            selectedTab === "Personal" && styles.activeTab,
+            isTabPressed === "Personal" && styles.tabPressed
+          ]}
           onPress={() => setSelectedTab("Personal")}
+          onPressIn={() => setIsTabPressed("Personal")}
+          onPressOut={() => setIsTabPressed(null)}
         >
           <Text style={[styles.tabText, selectedTab === "Personal" && styles.activeTabText]}>
             Personal
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, selectedTab === "Group" && styles.activeTab]}
+          style={[
+            styles.tab, 
+            selectedTab === "Group" && styles.activeTab,
+            isTabPressed === "Group" && styles.tabPressed
+          ]}
           onPress={() => setSelectedTab("Group")}
+          onPressIn={() => setIsTabPressed("Group")}
+          onPressOut={() => setIsTabPressed(null)}
         >
           <Text style={[styles.tabText, selectedTab === "Group" && styles.activeTabText]}>
             Group
@@ -178,8 +204,8 @@ const HomePage = () => {
         <ActivityIndicator size="large" color="#6A5ACD" />
       ) : selectedTab === "All" ? (
         <SectionList
-          sections={items.filter(section => section && section.data && section.data.length > 0)} // Ensure sections have data
-          keyExtractor={(item) => item.id ? `${item.id}-${item.type}` : `${Math.random()}`} // Ensure unique keys
+          sections={items.filter(section => section && section.data && section.data.length > 0)}
+          keyExtractor={(item) => item.id ? `${item.id}-${item.type}` : `${Math.random()}`}
           renderItem={renderItem}
           renderSectionHeader={({ section: { title } }) => (
             <Text style={styles.sectionHeader}>{title}</Text>
@@ -191,7 +217,7 @@ const HomePage = () => {
       ) : (
         <FlatList
           data={items}
-          keyExtractor={(item) => item.id ? `${item.id}-${item.type}` : `${Math.random()}`} // Ensure unique keys
+          keyExtractor={(item) => item.id ? `${item.id}-${item.type}` : `${Math.random()}`}
           renderItem={renderItem}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
@@ -200,57 +226,89 @@ const HomePage = () => {
           }
         />
       )}
-      <TouchableOpacity
-        style={styles.aiFab}
-        onPress={() => setAiModalVisible(true)}
-      >
-        <FontAwesome5 name="robot" size={24} color="white" />
-      </TouchableOpacity>
-      <Modal
-  transparent={true}
-  animationType="slide"
-  visible={aiModalVisible}
-  onRequestClose={() => setAiModalVisible(false)}
->
-  <View style={styles.modalOverlay}>
-    <View style={styles.modalContainer}>
-      <Text style={styles.modalTitle}>AI Actions</Text>
 
+      {/* AI Floating Action Button */}
       <TouchableOpacity
-        style={styles.modalOption}
-        onPress={() => {
-          setAiModalVisible(false);
-          navigation.navigate("BuildSchedule"); // Navigate to Build Schedule screen
-        }}
+        style={[
+          styles.aiFab,
+          isAiFabHovered && styles.aiFabHovered,
+          aiModalVisible && styles.aiFabActive
+        ]}
+        onPress={toggleAiModal}
+        onPressIn={() => setIsAiFabHovered(true)}
+        onPressOut={() => setIsAiFabHovered(false)}
       >
-        <Text style={styles.modalOptionText}>Build Schedule for the Week</Text>
+        <FontAwesome5 
+          name="robot" 
+          size={24} 
+          color={aiModalVisible ? "#4B3A8E" : "white"} 
+        />
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.modalOption}
-        onPress={() => {
-          setAiModalVisible(false);
-          navigation.navigate("CurrentSchedule"); // Navigate to Current Schedule screen
-        }}
-      >
-        <Text style={styles.modalOptionText}>Show Current Schedule</Text>
-      </TouchableOpacity>
+      {/* AI Modal Buttons - Only Build and Current remain */}
+      {aiModalVisible && (
+        <>
+          <TouchableOpacity
+            style={[
+              styles.radialButton, 
+              styles.buildButton,
+              isBuildPressed && styles.radialButtonPressed
+            ]}
+            onPress={() => {
+              setAiModalVisible(false);
+              navigation.navigate("BuildSchedule");
+            }}
+            onPressIn={() => setIsBuildPressed(true)}
+            onPressOut={() => setIsBuildPressed(false)}
+          >
+            <FontAwesome5 name="tools" size={20} color="white" />
+            <Text style={styles.radialText}>Build your schedule</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.modalCancel}
-        onPress={() => setAiModalVisible(false)}
-      >
-        <Text style={styles.modalCancelText}>Cancel</Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-</Modal>
+          <TouchableOpacity
+            style={[
+              styles.radialButton, 
+              styles.currentButton,
+              isCurrentPressed && styles.radialButtonPressed
+            ]}
+            onPress={() => {
+              setAiModalVisible(false);
+              navigation.navigate("CurrentSchedule");
+            }}
+            onPressIn={() => setIsCurrentPressed(true)}
+            onPressOut={() => setIsCurrentPressed(false)}
+          >
+            <FontAwesome5 name="calendar-alt" size={20} color="white" />
+            <Text style={styles.radialText}>Current schedule</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+              style={[
+                styles.radialButton, 
+                styles.chatButton,
+                isChatPressed && styles.radialButtonPressed
+              ]}
+              onPress={() => {
+                setAiModalVisible(false);
+                navigation.navigate("AI Chat");
+              }}
+              onPressIn={() => setIsChatPressed(true)}
+              onPressOut={() => setIsChatPressed(false)}
+            >
+              <FontAwesome5 name="comment" size={20} color="white" />
+              <Text style={styles.radialText}>AI Chat</Text>
+            </TouchableOpacity>
+        </>
+      )}
 
-
-      {/* Floating Action Button to Add Tasks/Groups */}
+      {/* Main Floating Action Button */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[
+          styles.fab,
+          isFabPressed && styles.fabPressed
+        ]}
         onPress={() => navigation.navigate(selectedTab === "Group" ? "Addgroup" : "AddTask")}
+        onPressIn={() => setIsFabPressed(true)}
+        onPressOut={() => setIsFabPressed(false)}
       >
         <MaterialIcons name="add" size={24} color="white" />
       </TouchableOpacity>
@@ -275,16 +333,29 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 20,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#6A5ACD',
   },
   activeTab: {
     backgroundColor: "#6A5ACD",
+    shadowColor: "#6A5ACD",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  tabPressed: {
+    backgroundColor: "#4B3A8E",
+    transform: [{ scale: 0.95 }],
   },
   tabText: {
     fontSize: 16,
     color: "#6A5ACD",
+    fontWeight: '500',
   },
   activeTabText: {
     color: "#FFFFFF",
+    fontWeight: '600',
   },
   taskItem: {
     padding: 16,
@@ -313,20 +384,21 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 20,
     bottom: 20,
-    width: 56,
-    height: 56,
+    width: 60,
+    height: 60,
     backgroundColor: "#6A5ACD",
-    borderRadius: 28,
+    borderRadius: 30,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
+    shadowRadius: 5,
     elevation: 8,
+  },
+  fabPressed: {
+    backgroundColor: "#4B3A8E",
+    transform: [{ scale: 0.95 }],
   },
   emptyText: {
     textAlign: "center",
@@ -354,21 +426,33 @@ const styles = StyleSheet.create({
   },
   aiFab: {
     position: "absolute",
-    right: 20, // Place it on the left
+    right: 20,
     bottom: 90,
-    width: 56,
-    height: 56,
+    width: 60,
+    height: 60,
     backgroundColor: "#6A5ACD",
-    borderRadius: 28,
+    borderRadius: 30,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
+    shadowRadius: 5,
     elevation: 8,
   },
-  
+  aiFabHovered: {
+    backgroundColor: "#5D4BB1",
+    transform: [{ scale: 1.05 }],
+  },
+  aiFabPressed: {
+    backgroundColor: "#4B3A8E",
+    transform: [{ scale: 0.95 }],
+  },
+  aiFabActive: {
+    backgroundColor: "#E0D8FF",
+    borderWidth: 2,
+    borderColor: "#6A5ACD",
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -412,6 +496,49 @@ const styles = StyleSheet.create({
   modalCancelText: {
     fontSize: 16,
     color: "red",
+  },
+  radialButton: {
+    position: "absolute",
+    width: 75,
+    height: 75,
+    borderRadius: 40,
+    backgroundColor: "#6A5ACD",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 10,
+    padding: 8,
+    borderWidth: 1, 
+    borderColor: "white", 
+  },
+  radialButtonPressed: {
+    backgroundColor: "#4B3A8E",
+    transform: [{ scale: 0.95 }],
+  },
+  radialText: {
+    color: "white",
+    fontSize: 10,
+    textAlign: "center",
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  
+  buildButton: {
+    bottom: 160,  
+    right: 20,    
+  },
+  currentButton: {
+    bottom: 120,  
+    right: 90,    
+  },
+  chatButton: {
+    bottom: 40,  
+    right: 90,   
+    backgroundColor: "#8E7CFF", 
   },
 });
 

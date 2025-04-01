@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   taskTimeContainer: {
-    backgroundColor: "#6A5ACD20", // 20% opacity of primary color
+    backgroundColor: "#6A5ACD20", 
     borderRadius: 8,
     padding: 8,
     marginRight: 12,
