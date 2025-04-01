@@ -2,7 +2,7 @@ from json import encoder
 import os
 from pyexpat import model
 from flask import Flask, jsonify, request, session, make_response, url_for
-from flask_cors import CORS, cross_origin  # Importing CORS
+from flask_cors import CORS, cross_origin  
 from flask_sqlalchemy import SQLAlchemy
 import pyodbc
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -12,7 +12,7 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from datetime import datetime,timedelta
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
-from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association,UserFreeSchedule
+from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association,UserFreeSchedule,UserSchedule
 from extensions import db, mail, jwt
 import logging
 import numpy as np
@@ -20,6 +20,7 @@ import tensorflow as tf,keras
 import joblib  
 from sqlalchemy import text
 import pandas as pd
+import json
 
 # Load environment variables
 load_dotenv()
@@ -63,7 +64,7 @@ def create_app():
     print("📌 Checking AI Model and Encoders Before Loading...")
 
     # ✅ Define Paths
-    model_path = "AI/task_prediction_model.keras"  # Ensure correct file extension
+    model_path = "AI/task_prediction_model.keras"  
     category_encoder_path = "AI/category_encoder.pkl"
     feature_scaler_path = "AI/feature_scaler.pkl"
     time_scaler_path = "AI/time_scaler.pkl"
@@ -122,12 +123,12 @@ def create_app():
         return response
 
         
-    register_routes(app)
+    routes(app)
 
     return app
 
 # ==================================================== Routes ======================================================= #
-def register_routes(app):
+def routes(app):
 
     @app.route('/register', methods=['POST'])
     def register():
@@ -381,6 +382,8 @@ def register_routes(app):
             status=data.get('status'),
             category = data.get('category', 'General'),  
             user_id=data.get('user_id'),
+            estimated_time=float(data.get('estimated_time', 0))  
+
         )
         
         db.session.add(new_task)
@@ -808,7 +811,7 @@ def register_routes(app):
     @app.route('/schedule/<int:user_id>', methods=['GET'])
     def get_user_schedule(user_id):
         try:
-            user_schedule = UserFreeSchedule.query.filter_by(user_id=user_id).first()  # Use user_id
+            user_schedule = UserFreeSchedule.query.filter_by(user_id=user_id).first()
 
             if not user_schedule:
                 print(f"⚠️ No schedule found for user {user_id}. Returning empty schedule.")
@@ -824,11 +827,24 @@ def register_routes(app):
                     "message": "No schedule found, returning an empty schedule."
                 }), 200
 
+            # Check if there is enough time in the schedule
+            total_available_hours = sum([
+                        sum(int(hour) for hour in day if isinstance(hour, (int, str)) and str(hour).isdigit())
+                        for day in user_schedule.to_dict().values() if isinstance(day, list)
+                    ])
+            if total_available_hours < 5:  # Adjust threshold as needed
+                return jsonify({
+                    "userID": user_id,
+                    **user_schedule.to_dict(),
+                    "message": "You do not have enough available time in your schedule. Consider adjusting your availability."
+                }), 200
+
             return jsonify(user_schedule.to_dict()), 200
 
         except Exception as e:
             print(f"❌ ERROR: {str(e)}")
             return jsonify({"error": "Internal server error", "message": str(e)}), 500
+
 
 
         
@@ -924,54 +940,87 @@ def register_routes(app):
 
         except Exception as e:
             return jsonify({"error": f"Error fetching group details: {str(e)}"}), 500
+
+    
+    @app.route("/save-schedule",methods=["POST"])
+    def save_schedule():
+        print("📥 /save-schedule called")
+        try:
+            data = request.get_json()
+            user_id=data.get("user_id")
+            schedule=data.get("schedule")
+
+            if not user_id or not schedule:
+                return jsonify({"error": "user_id and schedule are required"}), 400
+
+            # Convert schedule object to JSON string
+            schedule_json = json.dumps(schedule)
+
+            existing = UserSchedule.query.filter_by(user_id=user_id).first()
+            if existing:
+                existing.schedule_json = schedule_json
+                existing.updated_at = datetime.utcnow()
+            else:
+                new_schedule = UserSchedule(
+                    user_id=user_id,
+                    schedule_json=schedule_json
+                )
+                db.session.add(new_schedule)
+
+            db.session.commit()
+            return jsonify({"message": "Schedule saved successfully."})
         
+        except Exception as e:
+            print(f"❌ Error saving schedule: {e}")
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/current-schedule/<int:user_id>", methods=["GET"])
+    def get_current_schedule(user_id):
+        try:
+            # Fetch the saved schedule from the DB
+            user_schedule = UserSchedule.query.filter_by(user_id=user_id).first()
+
+            if not user_schedule:
+                return jsonify({"message": "No saved schedule found."}), 404
+
+            # Parse the JSON string back to Python object
+            schedule = json.loads(user_schedule.schedule_json)
+
+            return jsonify(schedule)  # Return the schedule array directly
+
+        except Exception as e:
+            print(f"❌ Error retrieving schedule: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    
  # ============================= 📌 AI Prediction API Endpoint ============================= #
     
-    
-    
-    @app.before_request
-    def ensure_model_loaded():
-        """ Ensures model and encoders are available before handling a request. """
-        if app.config.get("MODEL") is None:
-            print("🔄 Re-loading AI model due to missing config...")
-            try:
-                app.config["MODEL"] = tf.keras.models.load_model("AI/task_prediction_model.keras")
-                app.config["CATEGORY_ENCODER"] = joblib.load("AI/category_encoder.pkl")
-                app.config["FEATURE_SCALER"] = joblib.load("AI/feature_scaler.pkl")
-                app.config["TIME_SCALER"] = joblib.load("AI/time_scaler.pkl")
-                print("✅ AI Model and Encoders Re-loaded!")
-            except Exception as e:
-                print(f"❌ Error reloading AI Model: {e}")
+   
 
 
-    
-    
-    
-    
-    
-    
-    
-    
     @app.route("/predict", methods=["POST"])
     def predict_task_time():
         try:
             data = request.get_json()
             print(f"🔍 Incoming data: {data}")
 
-            # Retrieve AI components from Flask config
+            # ✅ Retrieve AI Components from app.config[]
             model = app.config.get("MODEL")
             category_encoder = app.config.get("CATEGORY_ENCODER")
             feature_scaler = app.config.get("FEATURE_SCALER")
             time_scaler = app.config.get("TIME_SCALER")
 
+            # ✅ Ensure AI components are loaded
             if not all([model, category_encoder, feature_scaler, time_scaler]):
-                return jsonify({"error": "AI model or encoders are not available. Try restarting the server."}), 500
+                return jsonify({"error": "AI model or encoders are not loaded properly."}), 500
 
-            # Extract inputs with validation
+            # ✅ Extract and validate inputs
             category = data.get("category")
             priority = data.get("priority")
             estimated_time = data.get("estimated_time")
             start_time = data.get("start_time")
+            deadline = data.get("deadline", None)  # ✅ Optional deadline
 
             if not all([category, priority, estimated_time, start_time]):
                 return jsonify({"error": "Missing required fields: category, priority, estimated_time, start_time"}), 400
@@ -979,43 +1028,222 @@ def register_routes(app):
             try:
                 priority = int(priority)
                 estimated_time = float(estimated_time)
-                start_time = pd.to_datetime(start_time).hour
+                start_time_dt = pd.to_datetime(start_time)  # ✅ Convert to datetime
+                start_time_hour = int(start_time_dt.hour)  # ✅ Extract hour for model input
+                deadline_dt = pd.to_datetime(deadline) if deadline else None  
             except ValueError:
                 return jsonify({"error": "Invalid data type for priority, estimated_time, or start_time"}), 400
 
-            # Encode category
+            # ✅ Calculate available time before the deadline if provided
+            available_time = None
+            if deadline_dt:
+                available_time = (deadline_dt - start_time_dt).total_seconds() / 60  # Convert to minutes
+                print(f"🕒 Available Time Before Deadline: {available_time:.2f} minutes")
+
+            # ✅ Encode category safely
             if category not in category_encoder.classes_:
-                return jsonify({"error": f"Unknown category: {category}. Available: {list(category_encoder.classes_)}"}), 400
+                print(f"⚠️ Unknown category received: {category}, defaulting to 'General'")
+                category = "General"
 
-            category_encoded = category_encoder.transform([category])[0]
+            category_encoded = int(category_encoder.transform([category])[0])
 
-            # Prepare input data
-            input_data = np.array([[category_encoded, priority, estimated_time, start_time]])
+            # ✅ Prepare input data
+            input_data = np.array([[category_encoded, priority, estimated_time, start_time_hour]], dtype=np.float32)
             print(f"🔍 Processed Input Data: {input_data}")
 
-            # Scale input
-            input_data_df = pd.DataFrame(input_data, columns=["category_encoded", "priority", "estimated_time", "start_time"])
-            input_data_scaled = feature_scaler.transform(input_data)
-            input_data_scaled = input_data_scaled.reshape(1, -1)  # Ensure shape is (1, 4)
+            # ✅ Convert to DataFrame with correct column names
+            input_data_df = pd.DataFrame(input_data, columns=["category_encoded", "priority", "estimated_time", "start_time_hour"])
+
+            # ✅ Scale input features
+            input_data_scaled = feature_scaler.transform(input_data_df)
             print(f"🔍 Scaled Input Data: {input_data_scaled}")
 
-            # Predict
+            # ✅ Make Prediction
             predicted_time_scaled = model.predict(input_data_scaled)
-            # Inverse transform the prediction
+            print(f"🔍 Raw Scaled Prediction: {predicted_time_scaled}")
+
+            # ✅ Inverse transform to get actual minutes
             predicted_time = time_scaler.inverse_transform(predicted_time_scaled.reshape(-1, 1))[0][0]
 
-            # Convert NumPy float32 to native float
-            predicted_time = float(predicted_time)
-            print(f"✅ Predicted Time (Minutes): {predicted_time}")
+            # ✅ Fix: Handle negative values and ensure minimum task time is **reasonable**
+            if np.isnan(predicted_time) or np.isinf(predicted_time) or predicted_time <= 1:
+                print("❌ Warning: Invalid prediction, setting to default 120 minutes (2 hours)")
+                predicted_time = 120  # Set default to **2 hours instead of 60 min**
 
-            return jsonify({ "predicted_time_minutes": round(predicted_time, 2),"predicted_time_hours": round(predicted_time / 60, 2)})
+            # ✅ Clamp prediction to a realistic range (1 min to 8 hours)
+            predicted_time = max(10, min(float(predicted_time), 480))
+            print(f"✅ Final Predicted Time (Minutes): {predicted_time}")
+
+            adjusted_due_to_urgency = False
+
+            # ✅ Adjust prediction if task is Important & Urgent (priority 1) and exceeds available time
+            if priority == 1 and available_time and predicted_time > available_time:
+                print(f"⚠️ Task is Important & Urgent! Adjusting predicted time to fit within available time.")
+                predicted_time = available_time  # Restrict task time within available window
+                adjusted_due_to_urgency = True
+
+            return jsonify({
+                "predicted_time_minutes": float(round(predicted_time, 2)),  # ✅ Ensure Python float
+                "predicted_time_hours": float(round(predicted_time / 60, 2)),  # ✅ Convert to hours
+                "adjusted_due_to_urgency": bool(adjusted_due_to_urgency)  # ✅ Ensure JSON boolean
+            })
 
         except Exception as e:
             print(f"❌ Error during prediction: {str(e)}")
             return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 
-        
+
+
+    @app.route("/ai/generate-schedule", methods=["POST"])
+    def generate_schedule():
+        try:
+            data = request.get_json()
+            user_id = data.get("user_id")
+            raw_task_hours = data.get("task_hours", {})
+
+            print(f"🛠 Generating schedule for user {user_id}...")
+            print(f"📦 Received Task Hours: {raw_task_hours}")
+
+            if not user_id or not raw_task_hours:
+                return jsonify({"error": "User ID and task hours are required"}), 400
+
+            # ✅ Convert and validate task hours
+            try:
+                task_hours = {
+                    int(task_id): int(round(float(hours)))
+                    for task_id, hours in raw_task_hours.items()
+                    if hours and str(hours).replace('.', '', 1).isdigit()
+                }
+            except Exception as e:
+                print(f"❌ Error processing task hours: {e}")
+                return jsonify({"error": "Invalid task hours data"}), 500
+
+            if not task_hours:
+                print("⚠️ No valid task hours provided.")
+                return jsonify({"message": "No valid task hours found."}), 400
+
+            # ✅ Fetch user availability
+            user_schedule = UserFreeSchedule.query.filter_by(user_id=user_id).first()
+            if not user_schedule:
+                return jsonify({"error": "No free time found"}), 404
+
+            # ✅ Fetch in-progress tasks
+            tasks = db.session.query(PersonalTask).filter(
+                PersonalTask.user_id == user_id,
+                PersonalTask.status == "In Progress"
+            ).order_by(PersonalTask.priority.asc(), PersonalTask.due_date.asc()).all()
+
+            if not tasks:
+                return jsonify({"message": "No in-progress tasks found."}), 404
+
+            # ✅ Parse available time slots
+            def parse_time_slots(time_ranges):
+                    slots = []
+                    if not time_ranges:
+                        return slots
+                    for time_range in time_ranges.split(","):
+                        try:
+                            start_str, end_str = time_range.strip().split("-")
+                            start = datetime.strptime(start_str.strip(), "%H:%M")
+                            end = datetime.strptime(end_str.strip(), "%H:%M")
+
+                            if (end - start).total_seconds() < 3600:
+                                continue
+
+                            current = start
+                            while current + timedelta(hours=1) <= end:
+                                slots.append(current)
+                                current += timedelta(hours=1)
+
+                        except ValueError as ve:
+                            print(f"⚠️ Invalid time format: {time_range} -> {ve}")
+                    return sorted(slots)
+
+
+            week_days = {
+                "Sunday": parse_time_slots(user_schedule.sunday),
+                "Monday": parse_time_slots(user_schedule.monday),
+                "Tuesday": parse_time_slots(user_schedule.tuesday),
+                "Wednesday": parse_time_slots(user_schedule.wednesday),
+                "Thursday": parse_time_slots(user_schedule.thursday),
+                "Friday": parse_time_slots(user_schedule.friday),
+                "Saturday": parse_time_slots(user_schedule.saturday),
+            }
+
+            print(f"📅 Available Free Slots Per Day: {week_days}")
+
+            schedule = []
+            unassigned_tasks = []
+
+            # Prepare schedule maps
+            week_days = {
+                "Sunday": parse_time_slots(user_schedule.sunday),
+                "Monday": parse_time_slots(user_schedule.monday),
+                "Tuesday": parse_time_slots(user_schedule.tuesday),
+                "Wednesday": parse_time_slots(user_schedule.wednesday),
+                "Thursday": parse_time_slots(user_schedule.thursday),
+                "Friday": parse_time_slots(user_schedule.friday),
+                "Saturday": parse_time_slots(user_schedule.saturday),
+            }
+
+            daily_map = {day: [] for day in week_days}
+            available_slots = {day: slots.copy() for day, slots in week_days.items()}
+
+            # Schedule each task across multiple available slots
+            for task in tasks:
+                remaining_hours = task_hours.get(task.id, 0)
+                scheduled_chunks = 0
+
+                for day in week_days:
+                    slots = available_slots[day]
+                    while remaining_hours > 0 and slots:
+                        # Pop the earliest slot
+                        slot = slots.pop(0)
+                        start_time = slot.strftime("%H:%M")
+
+                        # Save to daily schedule
+                        daily_map[day].append({
+                            "task": task.title,
+                            "priority": task.priority,
+                            "time": 1,  # 1-hour chunk
+                            "start_time": start_time
+                        })
+
+                        remaining_hours -= 1
+                        scheduled_chunks += 1
+
+                    if remaining_hours == 0:
+                        break
+
+                if remaining_hours > 0:
+                    unassigned_tasks.append(task.title)
+
+            # Convert daily_map to final response format
+            for day, task_list in daily_map.items():
+                if task_list:
+                    schedule.append({
+                        "day": day,
+                        "tasks": task_list
+                    })
+
+            print(f"✅ Final Schedule: {schedule}")
+            if unassigned_tasks:
+                print(f"⚠️ Unscheduled Tasks: {unassigned_tasks}")
+
+            return jsonify({
+                "schedule": schedule,
+                "unassigned_tasks": unassigned_tasks
+            })
+
+
+
+        except Exception as e:
+            print(f"❌ Error generating schedule: {e}")
+            return jsonify({"error": str(e)}), 500
+
+   
+
 
 # ==================================================== Main ========================================================== #
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

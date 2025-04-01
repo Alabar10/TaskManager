@@ -17,7 +17,7 @@ const priorityOptions = Object.keys(priorityMap);
 const AddTask = ({ navigation }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [deadline, setDeadline] = useState('');
+  const [deadline, setDeadline] = useState(null);  
   const [priority, setPriority] = useState('');
   const [status, setStatus] = useState('To Do');
   const [category, setCategory] = useState('General');
@@ -30,9 +30,10 @@ const AddTask = ({ navigation }) => {
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [estimatedTime, setEstimatedTime] = useState(null);
   const statusOptions = ['To Do', 'In Progress', 'Done'];
-  const categoryOptions = ['reading', 'coding', 'writing', 'exercising', 'General'];
+  const categoryOptions = ['General', 'coding', 'writing', 'reading', 'exercising'];
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [startTime, setStartTime] = useState(new Date());
 
   const handleDateChange = (event, selectedDate) => {
     if (selectedDate) {
@@ -115,6 +116,7 @@ const AddTask = ({ navigation }) => {
         status,
         category,
         user_id: userId,
+        estimated_time: estimatedTime !== null ? estimatedTime : 0,  // fix here
       });
 
       Alert.alert('Success', 'Task created successfully!');
@@ -128,65 +130,51 @@ const AddTask = ({ navigation }) => {
 
   const [estimatedCompletion, setEstimatedCompletion] = useState(null); // Added missing state
 
-const fetchEstimatedTime = async (selectedPriority, selectedCategory, estimatedTime, deadline) => {
-  setEstimatedTime(null);
-  setEstimatedCompletion(null); // Reset previous values
-
-  if (!selectedPriority || !selectedCategory || !deadline) {
-    console.warn("⚠️ Missing required values for prediction.");
-    Alert.alert("Error", "Please select priority, category, and deadline before fetching estimated time.");
-    return;
-  }
-
-  // Convert priority to numerical value
-  const priorityValue = priorityMap[selectedPriority];
-
-  if (!priorityValue) {
-    console.warn("⚠️ Invalid priority selected:", selectedPriority);
-    return;
-  }
-
-  // Extract start time (ISO format & Hour)
-  const startTimeISO = new Date(deadline).toISOString(); // Full ISO format
-  const startTimeHour = new Date(deadline).getHours(); // Extract just the hour
-
-  console.log("📤 Fetching Estimated Time with Data:", {
-    category: selectedCategory,
-    priority: priorityValue,
-    estimated_time: estimatedTime || 60, // Default estimated time
-    start_time: startTimeISO,
-  });
-
-  try {
-    const response = await axios.post(`${config.API_URL}/predict`, {
-      category: selectedCategory,
-      priority: priorityValue,
-      estimated_time: estimatedTime || 60, // Default estimated time
-      start_time: startTimeISO, // Full ISO format for consistency
-    });
-
-    console.log("🔍 API Response:", response.data);
-
-    if (response.data && typeof response.data.predicted_time_minutes === "number") {
-      const predictedMinutes = parseFloat(response.data.predicted_time_minutes);
-      setEstimatedTime(predictedMinutes.toFixed(2)); // Display in minutes
-
-      // ✅ Calculate estimated completion date/time
-      const startDate = new Date(deadline);
-      const completionDate = new Date(startDate.getTime() + predictedMinutes * 60000); // Convert minutes to ms
-
-      setEstimatedCompletion(completionDate.toLocaleString()); // Show readable date & time
-
-      console.log(`📅 Estimated Completion: ${completionDate.toLocaleString()}`);
-    } else {
-      console.warn("⚠️ Unexpected API response format:", response.data);
-      Alert.alert("Error", "Unexpected response from server.");
+  const fetchEstimatedTime = (selectedPriority, selectedCategory, estimatedTime, startTime, deadline) => {
+    setEstimatedTime(null);
+    setEstimatedCompletion(null);
+  
+    if (!selectedPriority || !selectedCategory || !startTime || !deadline) {
+      Alert.alert("Error", "Please select priority, category, start time, and deadline before fetching the estimated time.");
+      return;
     }
-  } catch (error) {
-    console.error("❌ Error fetching estimated time:", error);
-    Alert.alert("Error", "Failed to fetch estimated time.");
-  }
-};
+  
+    const priorityNumber = priorityMap[selectedPriority];
+  
+    const startTimeISO = new Date(startTime).toISOString();  // Correctly defined here
+    const deadlineISO = new Date(deadline).toISOString();    // Correctly defined here
+  
+    const requestData = {
+      category: selectedCategory,
+      priority: priorityNumber,
+      estimated_time: estimatedTime && estimatedTime > 0 ? estimatedTime : 60, // Ensure default to 60 minutes if zero or null
+      start_time: startTimeISO,    // ✅ properly defined above
+      deadline: deadlineISO,       // ✅ properly use deadlineISO here
+    };
+  
+    console.log("📤 Fetching Estimated Time with Data:", requestData);
+  
+    axios
+      .post(`${config.API_URL}/predict`, requestData)
+      .then((response) => {
+        console.log("🔍 API Response:", response.data);
+        if (response.data.predicted_time_minutes) {
+          setEstimatedTime(response.data.predicted_time_minutes);
+  
+          const predictedCompletion = new Date(
+            new Date(startTime).getTime() + response.data.predicted_time_minutes * 60000
+          );
+          setEstimatedCompletion(predictedCompletion.toLocaleString());
+          console.log(`📅 Estimated Completion: ${predictedCompletion}`);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        Alert.alert("Error", error.response?.data?.error || "Prediction failed.");
+      });
+  };
+  
+  
 
   
 
@@ -287,6 +275,7 @@ const fetchEstimatedTime = async (selectedPriority, selectedCategory, estimatedT
                   value={tempDate || new Date()}
                   mode="date"
                   display="spinner"
+                  textColor="#000"
                   onChange={(event, selectedDate) => {
                     if (selectedDate) {
                       setTempDate(selectedDate);
@@ -310,6 +299,7 @@ const fetchEstimatedTime = async (selectedPriority, selectedCategory, estimatedT
                   value={tempTime || new Date()}
                   mode="time"
                   display="spinner"
+                  textColor="#000"
                   onChange={(event, selectedTime) => {
                     if (selectedTime) {
                       setTempTime(selectedTime);
@@ -338,11 +328,14 @@ const fetchEstimatedTime = async (selectedPriority, selectedCategory, estimatedT
                 <TouchableOpacity
                   key={`priority-${index}`}
                   style={styles.option}
-                  onPress={() => {
-                    setPriority(option);
-                    fetchEstimatedTime(option, category, estimatedTime, deadline);
-                    setShowPriorityDropdown(false);
-                  }}
+                // Priority Selection Modal onPress
+                onPress={() => {
+                  const newPriority = option;  // Use the new value directly
+                  setPriority(newPriority);
+                  fetchEstimatedTime(newPriority, category, estimatedTime, startTime, deadline);
+                  setShowPriorityDropdown(false);
+                }}
+
                 >
                   <Text style={styles.optionText}>{option}</Text>
                 </TouchableOpacity>
@@ -389,11 +382,14 @@ const fetchEstimatedTime = async (selectedPriority, selectedCategory, estimatedT
                 <TouchableOpacity
                   key={`category-${index}`}
                   style={styles.option}
+                  // Category Selection Modal onPress
                   onPress={() => {
-                    setCategory(option);
-                    fetchEstimatedTime(priority, option, estimatedTime, deadline);
+                    const newCategory = option;
+                    setCategory(newCategory);
+                    fetchEstimatedTime(priority, newCategory, estimatedTime, startTime, deadline);
                     setShowCategoryDropdown(false);
                   }}
+
                 >
                   <Text style={styles.optionText}>{option}</Text>
                 </TouchableOpacity>
@@ -507,6 +503,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    color: "#000", // 🟢 Make text black
     marginBottom: 20,
     color: '#6A5ACD',
   },

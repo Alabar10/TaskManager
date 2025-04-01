@@ -1,127 +1,110 @@
 import os
-import re
+import pandas as pd
+import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-import numpy as np
-import pandas as pd
+from sqlalchemy import create_engine
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import joblib
-from sqlalchemy import create_engine, text
-from dotenv import load_dotenv
 
-# ✅ Load environment variables
-load_dotenv()
-DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URI")
+# ✅ Database connection to Azure SQL Server
+SQLALCHEMY_DATABASE_URI = "mssql+pyodbc://database:task1234!@takmanager.database.windows.net:1433/TaskManager?driver=ODBC+Driver+17+for+SQL+Server"
+engine = create_engine(SQLALCHEMY_DATABASE_URI)
 
-# ✅ Connect to the database
-engine = create_engine(DATABASE_URL)
+# ✅ Path to CSV file
+csv_path = r"C:\Users\alabr\Desktop\TaskManager\AI\task_data.csv"
 
+# ✅ Allowed categories
+ALLOWED_CATEGORIES = ["General", "coding", "writing", "reading", "exercising"]
+
+# ✅ Function to fetch data from the database
 def fetch_task_data():
-    query = text("""
-        SELECT category, priority, estimated_time, start_time, actual_time, time_taken 
-        FROM PersonalTasks 
-        WHERE actual_time IS NOT NULL AND start_time IS NOT NULL
-    """)
-    with engine.connect() as conn:
-        result = conn.execute(query).fetchall()
+    try:
+        query = """
+            SELECT category, priority, estimated_time, start_time, actual_time, time_taken
+            FROM PersonalTasks
+            WHERE actual_time IS NOT NULL AND time_taken IS NOT NULL
+        """
+        df_db = pd.read_sql(query, engine)
+    except Exception as e:
+        print(f"⚠️ Warning: Could not load data from database. Error: {e}")
+        df_db = pd.DataFrame()  # Empty DataFrame if query fails
 
-    df = pd.DataFrame(result, columns=['category', 'priority', 'estimated_time', 'start_time', 'actual_time', 'time_taken'])
+    return df_db
 
-    # ✅ Convert 'time_taken' to total minutes (if available)
-    def convert_time(text):
-        if not isinstance(text, str) or not text.strip():
-            return None
-        hours, minutes = 0, 0
-        match_hours = re.search(r'(\d+)\s*hours?', text)
-        match_minutes = re.search(r'(\d+)\s*minutes?', text)
-        if match_hours:
-            hours = int(match_hours.group(1))
-        if match_minutes:
-            minutes = int(match_minutes.group(1))
-        return (hours * 60) + minutes
+# ✅ Function to load CSV data
+def load_csv_data():
+    if os.path.exists(csv_path):
+        df_csv = pd.read_csv(csv_path)
+    else:
+        print(f"⚠️ Warning: CSV file not found at {csv_path}")
+        df_csv = pd.DataFrame()  # Empty DataFrame if file missing
 
-    df["time_taken_minutes"] = df["time_taken"].apply(convert_time)
+    return df_csv
 
-    # ✅ Convert 'actual_time' and 'start_time' to timestamps
-    df["start_time"] = pd.to_datetime(df["start_time"])
-    df["actual_time"] = pd.to_datetime(df["actual_time"])
+# ✅ Load both database and CSV data
+df_db = fetch_task_data()
+df_csv = load_csv_data()
 
-    # ✅ Drop rows where start_time or actual_time is missing
-    df.dropna(subset=["start_time", "actual_time"], inplace=True)
+# ✅ Combine both datasets
+df = pd.concat([df_db, df_csv], ignore_index=True)
 
-    # ✅ Calculate `total_time_minutes`
-    df["total_time_minutes"] = df["time_taken_minutes"].fillna(
-        (df["actual_time"] - df["start_time"]).dt.total_seconds() / 60
-    )
+# ✅ Filter only the allowed categories
+df = df[df["category"].isin(ALLOWED_CATEGORIES)]
 
-    # ✅ Handle missing estimated_time (Replace NULL with actual duration)
-    df["estimated_time"] = df["estimated_time"].fillna(df["total_time_minutes"])
+# ✅ Convert time_taken to minutes if it's not already numeric
+def convert_time_to_minutes(time_str):
+    if isinstance(time_str, str):
+        parts = time_str.split()
+        minutes = 0
+        for i in range(len(parts)):
+            if "hour" in parts[i]:
+                minutes += int(parts[i-1]) * 60
+            elif "minute" in parts[i]:
+                minutes += int(parts[i-1])
+        return minutes
+    return time_str
 
-    # ✅ Extract start hour feature
-    df["start_time_hour"] = df["start_time"].dt.hour
+df["time_taken"] = df["time_taken"].apply(convert_time_to_minutes)
 
-    # ✅ Drop remaining missing values
-    df.dropna(inplace=True)
+# ✅ Handle missing values
+df["estimated_time"] = df["estimated_time"].infer_objects(copy=False).fillna(df["estimated_time"].median())
+df["time_taken"] = df["time_taken"].fillna(df["time_taken"].median())
 
-    return df
+# ✅ Encode categorical labels
+label_encoder = LabelEncoder()
+df["category"] = label_encoder.fit_transform(df["category"])
 
-# ✅ Load data
-df = fetch_task_data()
+# ✅ Normalize numerical features
+scaler = StandardScaler()
+try:
+    df[["priority", "estimated_time", "time_taken"]] = scaler.fit_transform(df[["priority", "estimated_time", "time_taken"]])
+except ValueError as e:
+    print(f"❌ ERROR: Not enough data for scaling. Skipping training. {e}")
+    exit()
 
-# ✅ Print features before training
-print("Training Features:", df.columns.tolist())
+# ✅ Split data into training and testing sets
+X = df[["category", "priority", "estimated_time", "time_taken"]]
+y = df["time_taken"]  # Target is time_taken
 
-# ✅ Check if df is empty before processing
-if df.empty:
-    raise ValueError("❌ No data found in the database. Ensure 'PersonalTasks' table has valid task records.")
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# ✅ Print sample data to confirm it's loaded
-print("Sample Data Loaded:\n", df.head())
-
-# ✅ Get all unique categories from the database
-all_categories = df["category"].unique().tolist()
-
-# ✅ Train LabelEncoder on all known categories
-encoder = LabelEncoder()
-encoder.fit(all_categories)  # Train encoder on all categories
-df["category_encoded"] = encoder.transform(df["category"])
-
-# ✅ Define Feature Columns
-X_features = ["category_encoded", "priority", "estimated_time", "start_time_hour"]
-
-# ✅ Scale Input Features Properly
-X_scaler = StandardScaler()
-X_scaled = X_scaler.fit_transform(df[X_features])
-
-# ✅ Debug: Print Scaler Shape
-print(f"✅ Feature Scaler Trained with {X_scaler.n_features_in_} Features!")  # Expect 4
-
-# ✅ Scale target variable (total time taken)
-y_scaler = StandardScaler()
-y_scaled = y_scaler.fit_transform(df["total_time_minutes"].values.reshape(-1, 1))
-
-# ✅ Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X_scaled, y_scaled, test_size=0.2, random_state=42)
-
-# ✅ Build & Train Model
+# ✅ Build model
 model = keras.Sequential([
-    keras.layers.Input(shape=(len(X_features),)),  # Ensure input shape matches 4 features
-    keras.layers.Dense(64, activation='relu'),
-    keras.layers.Dense(32, activation='relu'),
-    keras.layers.Dense(16, activation='relu'),
+    keras.layers.Dense(16, activation="relu", input_shape=(4,)),
+    keras.layers.Dense(8, activation="relu"),
     keras.layers.Dense(1)
 ])
 
-model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
-model.fit(X_train, y_train, epochs=50, batch_size=16, validation_data=(X_test, y_test), verbose=1)
+model.compile(optimizer="adam", loss="mse", metrics=["mae"])
 
-# ✅ Save model & encoders
-os.makedirs("AI", exist_ok=True)
-model.save("AI/task_prediction_model.keras")
-joblib.dump(encoder, "AI/category_encoder.pkl")
-joblib.dump(X_scaler, "AI/feature_scaler.pkl")
-joblib.dump(y_scaler, "AI/time_scaler.pkl")
+# ✅ Train model
+model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=50, batch_size=4)
 
-print(f"✅ Model and encoders saved successfully with {X_scaler.n_features_in_} input features!")
-print(encoder.classes_)
+# ✅ Save model and encoders
+model.save("task_time_model.keras")  # Modern Keras format
+joblib.dump(scaler, "scaler.pkl")
+joblib.dump(label_encoder, "label_encoder.pkl")
+
+print(f"✅ Model trained & saved successfully with {len(X_train)} training samples!")

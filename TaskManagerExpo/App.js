@@ -26,6 +26,8 @@ import Addgroup from "./src/AddTask/addgroup";
 import AddUserToGroup from './src/GroupTask/AddUserToGroup';  
 import Schedule from './src/Schedule/schedule'
 import GroupMembersScreen from "./src/GroupTask/GroupMembersScreen";
+import BuildSchedule from "./src/AIScreen/BuildSchedule";
+import CurrentSchedule from "./src/AIScreen/CurrentSchedule";
 
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
@@ -53,6 +55,9 @@ const CustomDrawerContent = (props) => {
       },
     ]);
   };
+
+
+
 
   return (
     <View style={{ flex: 1 }}>
@@ -135,6 +140,8 @@ const App = () => (
             <Stack.Screen name="Addgroup" component={Addgroup} />
             <Stack.Screen name="AddUserToGroup" component={AddUserToGroup} />
             <Stack.Screen name="GroupMembers" component={GroupMembersScreen} />
+            <Stack.Screen name="BuildSchedule" component={BuildSchedule} />
+            <Stack.Screen name="CurrentSchedule" component={CurrentSchedule} />
             
           </Stack.Navigator>
         </NavigationContainer>

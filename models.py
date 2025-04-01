@@ -1,6 +1,7 @@
 from datetime import datetime
 from extensions import db
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.dialects.mssql import NVARCHAR
 
 
 class User(db.Model):
@@ -35,7 +36,8 @@ class PersonalTask(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('Users.userId'))
     category = db.Column(db.String(100), nullable=False, default="General")  # New column
     actual_time = db.Column(db.DateTime, nullable=True)  
-    start_time = db.Column(db.DateTime, nullable=True)   
+    start_time = db.Column(db.DateTime, nullable=True)  
+    estimated_time = db.Column(db.Float, nullable=True) 
     time_taken = db.Column(db.String(50), nullable=True)  # ✅ Store formatted time taken
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
@@ -64,6 +66,7 @@ class PersonalTask(db.Model):
                 "category": self.category, 
                 "actual_time": self.actual_time.strftime("%Y-%m-%d %H:%M:%S") if self.actual_time else None,
                 "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.start_time else None,
+                "estimated_time": round(self.estimated_time, 2) if self.estimated_time is not None else None,  
                 "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
                 "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
                 "time_taken": formatted_time if formatted_time else None  
@@ -189,4 +192,22 @@ class UserFreeSchedule(db.Model):
             "createdAt": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
             "updatedAt": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None
         }
-    
+
+
+class UserSchedule(db.Model):
+    __tablename__ = 'UserSchedule'
+    __table_args__ = {'schema': 'dbo'}  # ensure it's created in the right schema
+
+    schedule_id = db.Column("ScheduleID", db.Integer, primary_key=True)
+    user_id = db.Column("UserID", db.Integer, db.ForeignKey('Users.userId'), nullable=False, unique=True)
+    schedule_json = db.Column("ScheduleJSON", NVARCHAR(None), nullable=False)  # store as full JSON string
+    created_at = db.Column("CreatedAt", db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column("UpdatedAt", db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+
+    def to_dict(self):
+        return {
+            "user_id": self.user_id,
+            "schedule": self.schedule_json,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+        }

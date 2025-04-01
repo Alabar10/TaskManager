@@ -15,12 +15,14 @@ import axios from "axios"; // Use Axios for better API handling
 import config from "../config"; // Adjust the path based on your file structure
 import { FontAwesome5 } from "@expo/vector-icons";
 import { SectionList } from "react-native";
+import { Modal } from "react-native";
 
 const HomePage = () => {
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState("All");
   const navigation = useNavigation();
+  const [aiModalVisible, setAiModalVisible] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -54,7 +56,8 @@ const HomePage = () => {
           ...task,
           type: "task",
           status: task.status || "To Do", // Default status
-        }));
+        }))
+        .sort((a, b) => (a.status === "Done" ? 1 : b.status === "Done" ? -1 : 0));
 
         groupsData = groupsResponse.data.map(group => ({
           ...group,
@@ -73,7 +76,9 @@ const HomePage = () => {
           ...task,
           type: "task",
           status: task.status || "To Do",
-        }));
+        }))
+        .sort((a, b) => (a.status === "Done" ? 1 : b.status === "Done" ? -1 : 0));
+
         // Set items as a flat array for the "Personal" tab
         setItems(tasksData || []);
       }
@@ -195,6 +200,52 @@ const HomePage = () => {
           }
         />
       )}
+      <TouchableOpacity
+        style={styles.aiFab}
+        onPress={() => setAiModalVisible(true)}
+      >
+        <FontAwesome5 name="robot" size={24} color="white" />
+      </TouchableOpacity>
+      <Modal
+  transparent={true}
+  animationType="slide"
+  visible={aiModalVisible}
+  onRequestClose={() => setAiModalVisible(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContainer}>
+      <Text style={styles.modalTitle}>AI Actions</Text>
+
+      <TouchableOpacity
+        style={styles.modalOption}
+        onPress={() => {
+          setAiModalVisible(false);
+          navigation.navigate("BuildSchedule"); // Navigate to Build Schedule screen
+        }}
+      >
+        <Text style={styles.modalOptionText}>Build Schedule for the Week</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.modalOption}
+        onPress={() => {
+          setAiModalVisible(false);
+          navigation.navigate("CurrentSchedule"); // Navigate to Current Schedule screen
+        }}
+      >
+        <Text style={styles.modalOptionText}>Show Current Schedule</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.modalCancel}
+        onPress={() => setAiModalVisible(false)}
+      >
+        <Text style={styles.modalCancelText}>Cancel</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+
 
       {/* Floating Action Button to Add Tasks/Groups */}
       <TouchableOpacity
@@ -300,6 +351,67 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     marginTop: 10,
+  },
+  aiFab: {
+    position: "absolute",
+    right: 20, // Place it on the left
+    bottom: 90,
+    width: 56,
+    height: 56,
+    backgroundColor: "#6A5ACD",
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    shadowOpacity: 0.3,
+    elevation: 8,
+  },
+  
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  
+  modalContainer: {
+    width: "80%",
+    backgroundColor: "#FFF",
+    padding: 20,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+  },
+  
+  modalOption: {
+    paddingVertical: 12,
+    width: "100%",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#ddd",
+  },
+  
+  modalOptionText: {
+    fontSize: 16,
+    color: "#6A5ACD",
+  },
+  
+  modalCancel: {
+    paddingVertical: 12,
+    width: "100%",
+    alignItems: "center",
+  },
+  
+  modalCancelText: {
+    fontSize: 16,
+    color: "red",
   },
 });
 
