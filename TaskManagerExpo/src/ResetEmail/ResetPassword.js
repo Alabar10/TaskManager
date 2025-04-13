@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, TextInput, Button, Text, StyleSheet, Alert } from 'react-native';
+import config from "../config"; 
 
 const ResetPassword = ({ route, navigation }) => {
   const { email } = route.params;
@@ -16,7 +17,7 @@ const ResetPassword = ({ route, navigation }) => {
       return;
     }
     try {
-      const response = await fetch('http://192.168.1.42:5000/reset_password', {
+      const response = await fetch(`${config.API_URL}/reset_password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password: newPassword }),

@@ -17,6 +17,7 @@ const GroupTasksScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreator, setIsCreator] = useState(false); // Tracks if the current user is the group creator
   const [refreshing, setRefreshing] = useState(false);
+  const [memberMap, setMemberMap] = useState({});
 
   const fetchGroupData = async () => {
     try {
@@ -39,6 +40,16 @@ const GroupTasksScreen = () => {
 
       console.log("Fetched Group Tasks Data:", tasksData); // Debugging
       setTasks(tasksData);
+
+      const membersResponse = await fetch(`${config.API_URL}/groups/${groupId}/members`);
+      const members = await membersResponse.json();
+
+      // Build a map: { 1: 'Alice', 2: 'Bob' }
+      const map = {};
+      members.forEach(member => {
+        map[member.userId || member.id] = member.username || member.name;
+      });
+    setMemberMap(map);
     } catch (error) {
       console.error("Error fetching group data:", error);
     } finally {
@@ -59,6 +70,68 @@ const GroupTasksScreen = () => {
   );
   
 
+
+  const handleDistributeTasks = async () => {
+    try {
+      setIsLoading(true);
+      const userId = await AsyncStorage.getItem("userId");
+  
+      if (!userId) {
+        Alert.alert("Error", "User not found. Please log in again.");
+        return;
+      }
+  
+      // ✅ Fetch group members
+      const membersResponse = await fetch(`${config.API_URL}/groups/${groupId}/members`);
+      if (!membersResponse.ok) {
+        throw new Error("Failed to fetch group members");
+      }
+      const membersRaw = await membersResponse.json();
+  
+      // ✅ Normalize member IDs to { id: ... }
+      const members = membersRaw.map((m) => ({
+        id: m.id || m.userId,  // Support both formats
+        name: m.name,
+      }));
+  
+      if (!tasks || tasks.length === 0) {
+        Alert.alert("No Tasks", "There are no tasks to distribute.");
+        return;
+      }
+  
+      if (members.length === 0) {
+        Alert.alert("No Members", "There are no group members to assign tasks to.");
+        return;
+      }
+  
+      // ✅ Send to backend for AI distribution
+      const aiResponse = await axios.post(`${config.API_URL}/groups/${groupId}/ai-distribute`, {
+        tasks,
+        members,
+      });
+  
+      if (aiResponse.status === 200) {
+        const updatedTasks = aiResponse.data;
+  
+        // 🔁 Update each task on the server
+        for (const task of updatedTasks) {
+          await axios.put(`${config.API_URL}/groups/${groupId}/tasks/${task.id}`, task);
+        }
+  
+        Alert.alert("Success", "Tasks have been distributed by AI!");
+        fetchGroupData(); // 🔄 Refresh updated tasks
+      } else {
+        Alert.alert("Error", "Failed to distribute tasks via AI.");
+      }
+    } catch (error) {
+      console.error("AI distribution error:", error);
+      Alert.alert("Error", "Something went wrong while distributing tasks.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  
   // Delete group handler
   const handleDeleteGroup = async () => {
     try {
@@ -132,18 +205,37 @@ const GroupTasksScreen = () => {
       style={styles.taskItem}
       onPress={() => navigation.navigate("TaskDetails", { task: item })}
     >
-       <View style={styles.taskRow}>
-                <Text style={styles.taskTitle}>{item.title}</Text>
+      <View style={styles.taskRow}>
+            <Text style={styles.taskTitle}>{item.title}</Text>
+            {item.status && statusIcons[item.status] && (
+              <View style={styles.statusIconContainer}>
+                {statusIcons[item.status]}
+              </View>
+            )}
+          </View>
 
-                {/* ✅ Status icon aligned to the right */}
-                {item.status && statusIcons[item.status] && (
-                    <View style={styles.statusIconContainer}>
-                        {statusIcons[item.status]}
-                    </View>
-                )}
+          <Text style={styles.taskDetails}>
+            created at: {item.due_date || "No Due Date"}
+          </Text>
+
+          {/* ✅ Assigned users */}
+          {item.assigned_users && item.assigned_users.length > 0 && (
+          <View style={styles.assignedUsersContainer}>
+            <Text style={styles.taskDetails}>Assigned to:</Text>
+            <View style={styles.userChipsWrapper}>
+              {item.assigned_users.map((userId) => (
+                <View key={userId} style={styles.userChip}>
+                  <Text style={styles.userChipText}>
+                    {memberMap[userId] || `User ${userId}`}
+                  </Text>
+                </View>
+              ))}
             </View>
+          </View>
+        )}
 
-      <Text style={styles.taskDetails}>created at: {item.due_date || "No Due Date"}</Text>
+
+
     </TouchableOpacity>
   );
 
@@ -175,6 +267,16 @@ const GroupTasksScreen = () => {
       >
         <Text style={styles.viewMembersText}>👥 View Members</Text>
       </TouchableOpacity>
+
+      {isCreator && (
+      <TouchableOpacity
+        style={[styles.fab, { bottom: 200, backgroundColor: "#00BFFF" }]} // position it above others
+        onPress={handleDistributeTasks}
+      >
+        <Text style={styles.fabText}>🤖 AI Distribute</Text>
+      </TouchableOpacity>
+    )}
+
 
       {/* Show Add Task button */}
       <TouchableOpacity
@@ -341,6 +443,31 @@ statusIconContainer: {
     marginLeft: "auto", 
     paddingRight: 10, 
 },
+assignedUsersContainer: {
+  marginTop: 8,
+},
+
+userChipsWrapper: {
+  flexDirection: "row",
+  flexWrap: "wrap",
+  marginTop: 4,
+},
+
+userChip: {
+  backgroundColor: "#e0e0e0",
+  borderRadius: 20,
+  paddingHorizontal: 10,
+  paddingVertical: 4,
+  marginRight: 6,
+  marginBottom: 4,
+},
+
+userChipText: {
+  fontSize: 13,
+  color: "#333",
+  fontWeight: "500",
+},
+
 });
 
 export default GroupTasksScreen;

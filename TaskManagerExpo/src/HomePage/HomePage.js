@@ -12,7 +12,7 @@ import { useNavigation } from "@react-navigation/native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import axios from "axios"; // Use Axios for better API handling
-import config from "../config"; // Adjust the path based on your file structure
+import config from "../config"; 
 import { FontAwesome5 } from "@expo/vector-icons";
 import { SectionList } from "react-native";
 

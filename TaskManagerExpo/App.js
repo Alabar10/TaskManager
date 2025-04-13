@@ -13,7 +13,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/AuthContext";
 import Register from "./src/Register/register";
-import ResetEmail from "./src/ResetEmail/ResetEmail";
+import ResetFromLink from "./src/ResetEmail/ResetFromLink";
 import ResetPassword from "./src/ResetEmail/ResetPassword";
 import Settings from "./src/Setting/setting";
 import HomePage from "./src/HomePage/HomePage";
@@ -29,12 +29,29 @@ import GroupMembersScreen from "./src/GroupTask/GroupMembersScreen";
 import BuildSchedule from "./src/AIScreen/BuildSchedule";
 import CurrentSchedule from "./src/AIScreen/CurrentSchedule";
 import ChatWithAI from "./src/AIScreen/ChatWithAI";
+import RequestReset from "./src/ResetEmail/RequestReset";
+import * as Linking from 'expo-linking'; 
 
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 const DataPlaceholder = () => <View />;
+const linking = {
+  prefixes: ['myapp://'],
+  config: {
+    screens: {
+      ResetFromLink: {
+        path: 'reset',
+        parse: {
+          token: (token) => `${token}`,
+        },
+      },
+    },
+  },
+};
+
+
 
 // Custom Drawer Content
 const CustomDrawerContent = (props) => {
@@ -58,6 +75,7 @@ const CustomDrawerContent = (props) => {
   };
 
 
+  
 
 
   return (
@@ -127,12 +145,12 @@ const App = () => (
   <SafeAreaProvider>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer linking={linking}>
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={Register} />
             <Stack.Screen name="DrawerNavigator" component={DrawerNavigator} />
-            <Stack.Screen name="ResetEmail" component={ResetEmail} />
+            <Stack.Screen name="ResetFromLink" component={ResetFromLink} />
             <Stack.Screen name="ResetPassword" component={ResetPassword} />
             <Stack.Screen name="AddTask" component={AddTask} />
             <Stack.Screen name="TaskDetails" component={TaskDetailsScreen} />
@@ -144,6 +162,8 @@ const App = () => (
             <Stack.Screen name="BuildSchedule" component={BuildSchedule} />
             <Stack.Screen name="CurrentSchedule" component={CurrentSchedule} />
             <Stack.Screen name="AI Chat" component={ChatWithAI} />
+            <Stack.Screen name="RequestReset" component={RequestReset} />
+
             
           </Stack.Navigator>
         </NavigationContainer>

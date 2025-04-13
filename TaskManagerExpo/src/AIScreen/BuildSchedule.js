@@ -28,58 +28,89 @@ const BuildSchedule = () => {
   const [userAvailability, setUserAvailability] = useState(null);
   const navigation = useNavigation();
   const { userId } = useAuth();
+  const [structuredTasks, setStructuredTasks] = useState({ personal: [], groups: {} });
 
   useEffect(() => {
     const fetchData = async () => {
       if (!userId) return;
-      
+  
       setLoadingTasks(true);
       setLoadingSchedule(true);
-      
+  
       try {
-        // Fetch tasks
+        // 👉 1. Fetch personal tasks
         const tasksResponse = await axios.get(`${config.API_URL}/tasks/user/${userId}`);
-        const inProgressTasks = tasksResponse.data.filter(task => task.status === "In Progress");
-        setTasks(inProgressTasks);
-
+        const personalTasks = tasksResponse.data.filter(task => task.status === "In Progress");
+  
+        // 👉 2. Fetch group tasks assigned to the user
+        const groupTasksResponse = await axios.get(`${config.API_URL}/group-tasks/user/${userId}`);
+        const groupTasks = groupTasksResponse.data.filter(task => task.status === "In Progress");
+  
+        // 👉 3. Collect all group_ids from group tasks
+        const groupIds = [...new Set(groupTasks.map(t => t.group_id))];
+        const groupNamesMap = {};
+  
+        // 👉 4. Fetch group name for each group_id
+        for (const groupId of groupIds) {
+          try {
+            const res = await axios.get(`${config.API_URL}/groups?group_id=${groupId}`);
+            groupNamesMap[groupId] = res.data.name;
+          } catch (err) {
+            console.warn("⚠️ Failed to fetch group name for ID:", groupId);
+            groupNamesMap[groupId] = "Unknown Group";
+          }
+        }
+  
+        // 👉 5. Group groupTasks by group name
+        const groupedByGroup = {};
+        groupTasks.forEach(task => {
+          const groupName = groupNamesMap[task.group_id] || "Unknown Group";
+          if (!groupedByGroup[groupName]) groupedByGroup[groupName] = [];
+          groupedByGroup[groupName].push(task);
+        });
+  
+        // ✅ 6. Set structured task object
+        setStructuredTasks({
+          personal: personalTasks,
+          groups: groupedByGroup,
+        });
+  
+        // ✅ 7. Initialize task hours
         const initialHours = {};
-        inProgressTasks.forEach(task => {
-          initialHours[task.id] = "1"; // Default to 1 hour per task
+        [...personalTasks, ...groupTasks].forEach(task => {
+          initialHours[task.id] = "1";
         });
         setTaskHours(initialHours);
-
-        // Fetch user availability
+  
+        // 🕒 8. Fetch user availability
         const scheduleResponse = await axios.get(`${config.API_URL}/schedule/${userId}`);
-        
         if (scheduleResponse.data.message?.includes("No schedule found")) {
           setWarningMessage("Please set your availability first");
           setUserAvailability(null);
         } else {
           setUserAvailability(scheduleResponse.data);
-          
-          // Calculate total available hours
           const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-          const availableHours = days.reduce((total, day) => {
-            return total + (scheduleResponse.data[day]?.length || 0);
-          }, 0);
-          
+          const availableHours = days.reduce((total, day) => total + (scheduleResponse.data[day]?.length || 0), 0);
           setTotalAvailableHours(availableHours);
-          
+  
           if (scheduleResponse.data.message?.includes("not enough available time")) {
             setWarningMessage(scheduleResponse.data.message);
           }
         }
+  
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("❌ Error fetching data:", error);
         setWarningMessage("Failed to load data. Please try again.");
       } finally {
         setLoadingTasks(false);
         setLoadingSchedule(false);
       }
     };
-
+  
     fetchData();
   }, [userId]);
+  
+  
 
   const handleHourChange = (taskId, hours) => {
     const sanitizedHours = hours.replace(/^0+/, "") || "0";
@@ -206,122 +237,142 @@ const BuildSchedule = () => {
   }
 
   return (
-    <View style={ styles.screenWrapper }>
+    <View style={styles.screenWrapper}>
       {/* Floating Back Button */}
-    <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-      <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
-    </TouchableOpacity>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
+      </TouchableOpacity>
   
-      <FlatList
-        data={tasks}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.taskRow}>
-            <Text style={styles.taskTitle}>{item.title} (Priority {item.priority})</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={taskHours[item.id]?.toString()}
-              onChangeText={(text) => handleHourChange(item.id, text)}
-              placeholder="Hours"
-              maxLength={2}
-            />
-          </View>
-        )}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No in-progress tasks available.</Text>
-        }
-        ListHeaderComponent={
-          <View style={styles.container}>
-            <Text style={styles.header}>Build Schedule for the Week</Text>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.header}>Build Schedule for the Week</Text>
   
-            {loadingTasks || loadingSchedule ? (
-              <ActivityIndicator size="large" color="#6A5ACD" style={{ marginTop: 20 }} />
-            ) : (
-              <>
-                <View style={styles.availabilityInfo}>
-                  <Text style={styles.infoText}>
-                    Available Hours: {totalAvailableHours} | Scheduled Hours: {
-                      Object.values(taskHours).reduce((sum, h) => sum + parseInt(h || "0"), 0)
-                    }
-                  </Text>
-                </View>
-  
-                {warningMessage ? (
-                  <View style={styles.warningContainer}>
-                    <Text style={styles.warningText}>{warningMessage}</Text>
-                  </View>
-                ) : null}
-  
-                {!userAvailability && (
-                  <TouchableOpacity 
-                    style={styles.setAvailabilityButton}
-                    onPress={() => navigation.navigate('Availability')}
-                  >
-                    <Text style={styles.buttonText}>Set Your Availability</Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-          </View>
-        }
-        ListFooterComponent={
+        {loadingTasks || loadingSchedule ? (
+          <ActivityIndicator size="large" color="#6A5ACD" style={{ marginTop: 20 }} />
+        ) : (
           <>
-            <TouchableOpacity
-              style={[styles.button, (!tasks.length || generatingSchedule) && styles.disabledButton]}
-              onPress={generateSchedule}
-              disabled={!tasks.length || generatingSchedule}
-            >
-              <Text style={styles.buttonText}>
-                {generatingSchedule ? "Generating..." : "Generate Schedule"}
+            <View style={styles.availabilityInfo}>
+              <Text style={styles.infoText}>
+                Available Hours: {totalAvailableHours} | Scheduled Hours: {
+                  Object.values(taskHours).reduce((sum, h) => sum + parseInt(h || "0"), 0)
+                }
               </Text>
-            </TouchableOpacity>
+            </View>
   
-            {schedule.length > 0 && (
+            {warningMessage ? (
+              <View style={styles.warningContainer}>
+                <Text style={styles.warningText}>{warningMessage}</Text>
+              </View>
+            ) : null}
+  
+            {!userAvailability && (
+              <TouchableOpacity
+                style={styles.setAvailabilityButton}
+                onPress={() => navigation.navigate("Availability")}
+              >
+                <Text style={styles.buttonText}>Set Your Availability</Text>
+              </TouchableOpacity>
+            )}
+  
+            {/* Personal Tasks */}
+            {structuredTasks.personal.length > 0 && (
               <>
-                <View style={styles.scheduleContainer}>
-                  <Text style={styles.scheduleTitle}>Your Weekly Schedule</Text>
-                  {schedule.map((daySchedule, index) => {
-                    const dayTasks = calculateTaskTimes(daySchedule.tasks || []);
-                    return (
-                      <View key={index} style={styles.dayContainer}>
-                        <Text style={styles.dayTitle}>{daySchedule.day}</Text>
-                        {dayTasks.map((task, i) => (
-                          <View key={i} style={styles.taskTimeContainer}>
-                            <Text style={styles.taskTime}>{task.taskTime}</Text>
-                            <Text style={styles.scheduleItem}>{task.name || task.title}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    );
-                  })}
-                </View>
-  
-                <View style={styles.chartContainer}>
-                  <Text style={styles.chartTitle}>Weekly Task Hours</Text>
-                  <BarChart
-                    data={chartData}
-                    width={screenWidth - 40}
-                    height={220}
-                    chartConfig={{
-                      backgroundGradientFrom: "#ffffff",
-                      backgroundGradientTo: "#ffffff",
-                      decimalPlaces: 0,
-                      color: (opacity = 1) => `rgba(106, 90, 205, ${opacity})`,
-                      labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                    }}
-                    fromZero
-                    style={{ marginVertical: 8 }}
-                  />
-                </View>
+                <Text style={styles.sectionTitle}>Personal Tasks</Text>
+                {structuredTasks.personal.map(task => (
+                  <View key={task.id} style={styles.taskRow}>
+                    <Text style={styles.taskTitle}>
+                      {task.title} (Priority {task.priority})
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      value={taskHours[task.id]?.toString()}
+                      onChangeText={(text) => handleHourChange(task.id, text)}
+                      placeholder="Hours"
+                      maxLength={2}
+                    />
+                  </View>
+                ))}
               </>
             )}
+  
+            {/* Group Tasks by Group Name */}
+            {Object.entries(structuredTasks.groups).map(([groupName, tasks]) => (
+              <View key={groupName}>
+                <Text style={styles.sectionTitle}>{groupName}</Text>
+                {tasks.map(task => (
+                  <View key={task.id} style={styles.taskRow}>
+                    <Text style={styles.taskTitle}>
+                      {task.title} (Priority {task.priority})
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      value={taskHours[task.id]?.toString()}
+                      onChangeText={(text) => handleHourChange(task.id, text)}
+                      placeholder="Hours"
+                      maxLength={2}
+                    />
+                  </View>
+                ))}
+              </View>
+            ))}
           </>
-        }
-        contentContainerStyle={styles.container}
-      />
+        )}
+  
+        {/* Generate Button */}
+        <TouchableOpacity
+          style={[styles.button, (generatingSchedule || !tasks.length) && styles.disabledButton]}
+          onPress={generateSchedule}
+          disabled={!tasks.length || generatingSchedule}
+        >
+          <Text style={styles.buttonText}>
+            {generatingSchedule ? "Generating..." : "Generate Schedule"}
+          </Text>
+        </TouchableOpacity>
+  
+        {/* Schedule & Chart */}
+        {schedule.length > 0 && (
+          <>
+            <View style={styles.scheduleContainer}>
+              <Text style={styles.scheduleTitle}>Your Weekly Schedule</Text>
+              {schedule.map((daySchedule, index) => {
+                const dayTasks = calculateTaskTimes(daySchedule.tasks || []);
+                return (
+                  <View key={index} style={styles.dayContainer}>
+                    <Text style={styles.dayTitle}>{daySchedule.day}</Text>
+                    {dayTasks.map((task, i) => (
+                      <View key={i} style={styles.taskTimeContainer}>
+                        <Text style={styles.taskTime}>{task.taskTime}</Text>
+                        <Text style={styles.scheduleItem}>{task.name || task.title}</Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </View>
+  
+            <View style={styles.chartContainer}>
+              <Text style={styles.chartTitle}>Weekly Task Hours</Text>
+              <BarChart
+                data={chartData}
+                width={screenWidth - 40}
+                height={220}
+                chartConfig={{
+                  backgroundGradientFrom: "#ffffff",
+                  backgroundGradientTo: "#ffffff",
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(106, 90, 205, ${opacity})`,
+                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                }}
+                fromZero
+                style={{ marginVertical: 8 }}
+              />
+            </View>
+          </>
+        )}
+      </ScrollView>
     </View>
-  );  
+  );
 };
 
 const styles = StyleSheet.create({
@@ -463,11 +514,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
   },
-  
+
   screenWrapper: {
     flex: 1,
     position: "relative", 
   },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#4B0082",
+    marginTop: 20,
+    marginBottom: 10,
+  }
   
 });
 

@@ -1,6 +1,6 @@
 from json import encoder
 import os
-from flask import Flask, jsonify, request, session, make_response, url_for
+from flask import Flask, jsonify, request, session, make_response, url_for,render_template_string
 from flask_cors import CORS, cross_origin  
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -14,23 +14,26 @@ from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_as
 from extensions import db, mail, jwt
 import logging
 import numpy as np
-import tensorflow as tf,keras  
+import tensorflow as tf  
 import joblib  
-from sqlalchemy import text
 import pandas as pd
 import json
 from sqlalchemy.orm import joinedload
 from AI.AiChat import generate_ai_advice
-from transformers import pipeline
+from itsdangerous import URLSafeTimedSerializer
+from urllib.parse import quote
+from collections import defaultdict
+
 
 # Load environment variables
-load_dotenv()
-
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path=".env", override=True)
 def create_app():
 
     # Application setup
     app = Flask(__name__)
     app.secret_key = os.getenv('FLASK_APP_SECRET_KEY')
+
 
     # Mail configuration
     app.config['MAIL_SERVER'] = 'smtp.gmail.com'
@@ -39,6 +42,10 @@ def create_app():
     app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
     app.config['MAIL_USE_TLS'] = True
     app.config['MAIL_USE_SSL'] = False
+
+
+    print("✅ Loaded MAIL_USERNAME:", os.getenv("MAIL_USERNAME"))
+    print("✅ Loaded MAIL_PASSWORD:", os.getenv("MAIL_PASSWORD"))
 
     # Database ORM configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -632,10 +639,11 @@ def routes(app):
     def create_group_task():
         data = request.get_json()
 
-        required_fields = ["title", "description", "group_id", "priority", "status"]
-        missing_fields = [field for field in required_fields if not data.get(field)]
+        required_fields = ["title", "description", "group_id", "priority", "status","category"]
+        missing_fields = [field for field in required_fields if field not in data or data[field] is None or data[field] == '']
 
         if missing_fields:
+            app.logger.warning("❌ Missing fields: %s", missing_fields)
             return jsonify({"message": "Missing required fields", "missing": missing_fields}), 400
 
         title = data.get('title')
@@ -643,6 +651,7 @@ def routes(app):
         group_id = data.get('group_id')
         priority = data.get('priority')
         status = data.get('status')
+        category=data.get('category')
         created_at = datetime.utcnow()
 
         due_date = data.get('due_date', created_at)
@@ -660,7 +669,8 @@ def routes(app):
             group_id=group_id,
             due_date=due_date,
             priority=priority,
-            status=status
+            status=status,
+            category=category
         )
 
         try:
@@ -678,42 +688,44 @@ def routes(app):
     @app.route('/groups/<int:group_id>/tasks/<int:task_id>', methods=['PUT'])
     def update_group_task(group_id, task_id):
         print(f"🔍 Looking for group ID: {group_id}")
-        group = Group.query.get(group_id)
+        group = db.session.get(Group, group_id)
 
         if not group:
             print("❌ Group not found!")
             return jsonify({"message": "Group not found."}), 404
 
         print(f"🔍 Looking for task ID: {task_id} in group {group_id}")
-        task = GroupTask.query.filter_by(id=task_id, group_id=group_id).first()  # ✅ Ensure GroupTask is used
+        task = GroupTask.query.filter_by(id=task_id, group_id=group_id).first()
 
         if not task:
             print("❌ Task not found in group!")
             return jsonify({"message": "Task not found in this group."}), 404
 
         data = request.get_json()
-        print(f"📩 Received Data: {data}")  # ✅ Debugging log
+        print(f"📩 Received Data: {data}")
 
-        # Update the task fields
+        # ✅ Update basic task fields
         task.title = data.get('title', task.title)
         task.description = data.get('description', task.description)
         task.priority = data.get('priority', task.priority)
-        task.status = data.get('status', task.status)  # ✅ Ensure this is updated
+        task.status = data.get('status', task.status)
         task.due_date = data.get('due_date', task.due_date)
         task.deadline = data.get('deadline', task.deadline)
 
-        print(f"🔄 Updating status from {task.status} ➝ {data.get('status')}")  # ✅ Debugging log
+        # ✅ Update assigned users if provided
+        if 'assigned_users' in data:
+            user_ids = data['assigned_users']
+            task.assigned_users = User.query.filter(User.userId.in_(user_ids)).all()
+            print(f"👥 Assigned Users Updated: {user_ids}")
 
         try:
             db.session.commit()
-            print(f"✅ After Update: {task.to_dict()}")  # ✅ Log after update
+            print(f"✅ After Update: {task.to_dict()}")
             return jsonify(task.to_dict()), 200
         except Exception as e:
             db.session.rollback()
-            print(f"🚨 Database Commit Error: {str(e)}")  # Log database error
+            print(f"🚨 Database Commit Error: {str(e)}")
             return jsonify({"error": str(e)}), 500
-
-
 
 
 
@@ -995,7 +1007,183 @@ def routes(app):
             print(f"❌ Error retrieving schedule: {e}")
             return jsonify({"error": str(e)}), 500
 
+
+    @app.route('/reset_password', methods=['POST'])
+    def reset_password():
+        data = request.get_json()
+        email = data.get('email')
+        new_password = data.get('password')
+
+        if not email or not new_password:
+            return jsonify({'message': 'Missing email or password'}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({'message': 'User not found'}), 404
+
+        hashed_password = generate_password_hash(new_password)
+        user['password'] = hashed_password
+        db.session.commit()  
+
+
+        return jsonify({'message': 'Password reset successful'}), 200
     
+
+
+    @app.route('/request_reset', methods=['POST'])
+    def request_reset():
+        data = request.get_json()
+        email = data.get('email')
+
+        if not email:
+            return jsonify({"message": "Email is required"}), 400
+
+        # Check if user exists
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+
+        # Generate secure token
+        serializer = URLSafeTimedSerializer(app.secret_key)
+        token = serializer.dumps(email, salt='reset-password-salt')
+        safe_token = quote(token)  # URL-encode token for safety
+
+        # ✅ Use HTTPS link instead of myapp:// directly
+        reset_url = f"http://192.168.1.42:5000/reset?token={safe_token}"
+
+        print(f"📨 Reset URL to send: {reset_url}")
+
+        try:
+            print(f"📧 Sending email to {email}...")
+            msg = Message(
+                "Password Reset Request",
+                sender=os.getenv('MAIL_USERNAME'),
+                recipients=[email]
+            )
+
+            msg.body = f"Click the link to reset your password:\n\n{reset_url}"
+
+            msg.html = f"""
+            <p>Click the button below to reset your password:</p>
+            <table role="presentation" cellspacing="0" cellpadding="0">
+            <tr>
+                <td align="center" bgcolor="#4CAF50" style="border-radius: 5px;">
+                <a href="{reset_url}" target="_blank" style="
+                    display: inline-block;
+                    padding: 12px 24px;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 16px;
+                    color: #ffffff;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    font-weight: bold;
+                ">
+                    Reset Password
+                </a>
+                </td>
+            </tr>
+            </table>
+
+            <p style="margin-top: 20px;">
+            Or open this link manually:<br>
+            <a href="{reset_url}">{reset_url}</a>
+            </p>
+            """
+
+            mail.send(msg)
+            print("✅ Email sent successfully!")
+            return jsonify({"message": "Reset link sent"}), 200
+
+        except Exception as e:
+            print(f"❌ Email send failed: {e}")
+            return jsonify({"message": f"Failed to send email: {str(e)}"}), 500
+
+    @app.route('/reset')
+    def redirect_to_mobile_app():
+        token = request.args.get('token')
+        if not token:
+            return "Invalid or missing token", 400
+
+        return render_template_string(f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <title>Redirecting...</title>
+        <meta http-equiv="refresh" content="0; url=myapp://reset?token={token}" />
+        <style>
+            body {{
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 100px;
+            }}
+            a {{
+            display: inline-block;
+            margin-top: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            }}
+        </style>
+        </head>
+        <body>
+        <h2>Redirecting to the app...</h2>
+        <p>If nothing happens, click the button below:</p>
+        <a href="myapp://reset?token={token}">Open in App</a>
+        </body>
+        </html>
+        """)
+
+    @app.route('/reset_password_token', methods=['POST'])
+    def reset_password_token():
+        data = request.get_json()
+        token = data.get('token')
+        new_password = data.get('password')
+
+        if not token or not new_password:
+            return jsonify({"message": "Token and password are required"}), 400
+
+        serializer = URLSafeTimedSerializer(app.secret_key)
+
+        try:
+            email = serializer.loads(token, salt='reset-password-salt', max_age=3600)  # 1 hour validity
+        except Exception as e:
+            return jsonify({"message": "Invalid or expired token"}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+
+        user.password = generate_password_hash(new_password)
+        db.session.commit()
+        return jsonify({"message": "Password has been reset successfully"}), 200
+
+
+    @app.route('/group-tasks/user/<int:user_id>', methods=['GET'])
+    def get_group_tasks_for_user(user_id):
+        tasks = GroupTask.query\
+            .join(task_user_association)\
+            .filter(task_user_association.c.user_id == user_id)\
+            .all()
+
+        result = []
+        for task in tasks:
+            task_dict = task.to_dict()
+            group = Group.query.get(task.group_id)
+            task_dict["group"] = {"name": group.name if group else "Unknown Group"}
+            result.append(task_dict)
+
+        return jsonify(result)
+
+
+
+
+
+
+
+
+
  # ============================= 📌 AI Prediction API Endpoint ============================= #
     
    
@@ -1007,22 +1195,19 @@ def routes(app):
             data = request.get_json()
             print(f"🔍 Incoming data: {data}")
 
-            # ✅ Retrieve AI Components from app.config[]
             model = app.config.get("MODEL")
             category_encoder = app.config.get("CATEGORY_ENCODER")
             feature_scaler = app.config.get("FEATURE_SCALER")
-            time_scaler = app.config.get("TIME_SCALER")
+            time_scaler = app.config.get("TIME_SCALER")  # NEW: Get the time scaler
 
-            # ✅ Ensure AI components are loaded
             if not all([model, category_encoder, feature_scaler, time_scaler]):
-                return jsonify({"error": "AI model or encoders are not loaded properly."}), 500
+                return jsonify({"error": "Model or encoders are not loaded properly."}), 500
 
-            # ✅ Extract and validate inputs
             category = data.get("category")
             priority = data.get("priority")
             estimated_time = data.get("estimated_time")
             start_time = data.get("start_time")
-            deadline = data.get("deadline", None)  # ✅ Optional deadline
+            deadline = data.get("deadline")
 
             if not all([category, priority, estimated_time, start_time]):
                 return jsonify({"error": "Missing required fields: category, priority, estimated_time, start_time"}), 400
@@ -1030,71 +1215,55 @@ def routes(app):
             try:
                 priority = int(priority)
                 estimated_time = float(estimated_time)
-                start_time_dt = pd.to_datetime(start_time)  # ✅ Convert to datetime
-                start_time_hour = int(start_time_dt.hour)  # ✅ Extract hour for model input
-                deadline_dt = pd.to_datetime(deadline) if deadline else None  
+                start_time_dt = pd.to_datetime(start_time)
+                start_time_hour = int(start_time_dt.hour)
+                deadline_dt = pd.to_datetime(deadline) if deadline else None
             except ValueError:
                 return jsonify({"error": "Invalid data type for priority, estimated_time, or start_time"}), 400
 
-            # ✅ Calculate available time before the deadline if provided
             available_time = None
             if deadline_dt:
-                available_time = (deadline_dt - start_time_dt).total_seconds() / 60  # Convert to minutes
+                available_time = (deadline_dt - start_time_dt).total_seconds() / 60  # minutes
                 print(f"🕒 Available Time Before Deadline: {available_time:.2f} minutes")
 
-            # ✅ Encode category safely
             if category not in category_encoder.classes_:
-                print(f"⚠️ Unknown category received: {category}, defaulting to 'General'")
+                print(f"⚠️ Unknown category: {category}. Defaulting to 'General'")
                 category = "General"
 
             category_encoded = int(category_encoder.transform([category])[0])
-
-            # ✅ Prepare input data
             input_data = np.array([[category_encoded, priority, estimated_time, start_time_hour]], dtype=np.float32)
-            print(f"🔍 Processed Input Data: {input_data}")
+            input_df = pd.DataFrame(input_data, columns=["category_encoded", "priority", "estimated_time", "start_time_hour"])
 
-            # ✅ Convert to DataFrame with correct column names
-            input_data_df = pd.DataFrame(input_data, columns=["category_encoded", "priority", "estimated_time", "start_time_hour"])
+            # Scale the input features
+            scaled_input = feature_scaler.transform(input_df)
+            predicted_scaled = model.predict(scaled_input)[0][0]
+            print(f"🔎 Model raw output (scaled): {predicted_scaled}")
 
-            # ✅ Scale input features
-            input_data_scaled = feature_scaler.transform(input_data_df)
-            print(f"🔍 Scaled Input Data: {input_data_scaled}")
+            # ----- NEW: Inverse transform the predicted value -----
+            predicted_time = time_scaler.inverse_transform(np.array([[predicted_scaled]]))[0][0]
+            # -------------------------------------------------------
 
-            # ✅ Make Prediction
-            predicted_time_scaled = model.predict(input_data_scaled)
-            print(f"🔍 Raw Scaled Prediction: {predicted_time_scaled}")
-
-            # ✅ Inverse transform to get actual minutes
-            predicted_time = time_scaler.inverse_transform(predicted_time_scaled.reshape(-1, 1))[0][0]
-
-            # ✅ Fix: Handle negative values and ensure minimum task time is **reasonable**
             if np.isnan(predicted_time) or np.isinf(predicted_time) or predicted_time <= 1:
-                print("❌ Warning: Invalid prediction, setting to default 120 minutes (2 hours)")
-                predicted_time = 120  # Set default to **2 hours instead of 60 min**
+                print("❌ Invalid prediction, defaulting to 120 minutes")
+                predicted_time = 120
 
-            # ✅ Clamp prediction to a realistic range (1 min to 8 hours)
             predicted_time = max(10, min(float(predicted_time), 480))
             print(f"✅ Final Predicted Time (Minutes): {predicted_time}")
 
             adjusted_due_to_urgency = False
-
-            # ✅ Adjust prediction if task is Important & Urgent (priority 1) and exceeds available time
             if priority == 1 and available_time and predicted_time > available_time:
-                print(f"⚠️ Task is Important & Urgent! Adjusting predicted time to fit within available time.")
-                predicted_time = available_time  # Restrict task time within available window
+                predicted_time = available_time
                 adjusted_due_to_urgency = True
 
             return jsonify({
-                "predicted_time_minutes": float(round(predicted_time, 2)),  # ✅ Ensure Python float
-                "predicted_time_hours": float(round(predicted_time / 60, 2)),  # ✅ Convert to hours
-                "adjusted_due_to_urgency": bool(adjusted_due_to_urgency)  # ✅ Ensure JSON boolean
+                "predicted_time_minutes": round(predicted_time, 2),
+                "predicted_time_hours": round(predicted_time / 60, 2),
+                "adjusted_due_to_urgency": adjusted_due_to_urgency
             })
 
         except Exception as e:
-            print(f"❌ Error during prediction: {str(e)}")
+            print(f"❌ Prediction error: {e}")
             return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
-
-
 
 
     @app.route("/ai/generate-schedule", methods=["POST"])
@@ -1281,6 +1450,86 @@ def routes(app):
         # Now pass urgent_tasks as an extra parameter
         reply = generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urgent_tasks)
         return jsonify({"reply": reply})
+    
+
+
+
+    @app.route('/groups/<int:group_id>/ai-distribute', methods=['POST'])
+    def ai_distribute_tasks(group_id):
+        from collections import defaultdict
+        import json
+
+        data = request.get_json()
+        tasks = data.get('tasks', [])
+        members = data.get('members', [])
+
+        if not tasks or not members:
+            return jsonify({"error": "Missing tasks or members"}), 400
+
+        # Step 1: Calculate total free time per user
+        user_free_time = {}
+        for member in members:
+            schedule_entry = UserSchedule.query.filter_by(user_id=member["id"]).first()
+            if schedule_entry:
+                try:
+                    schedule = json.loads(schedule_entry.schedule_json)
+                    total_minutes = sum(len(slots) * 60 for slots in schedule.values() if isinstance(slots, list))
+                except Exception:
+                    total_minutes = 0
+            else:
+                total_minutes = 0
+            user_free_time[member["id"]] = total_minutes
+
+        total_free_time = sum(user_free_time.values()) or 1  # Avoid division by zero
+
+        # Step 2: Sort users by free time (most to least)
+        sorted_users = sorted(user_free_time.items(), key=lambda x: x[1], reverse=True)
+        user_queue = [user_id for user_id, _ in sorted_users]
+
+        distributed_tasks = []
+        user_index = 0
+
+        for task_data in tasks:
+            task = db.session.get(GroupTask, task_data["id"])
+            if not task:
+                continue
+
+            # Assign based on urgency
+            assigned_users = []
+
+            is_urgent = (
+                task.priority == 1 and
+                task.deadline and task.deadline <= datetime.utcnow() + timedelta(days=2)
+            )
+
+            num_assignees = 2 if is_urgent else 1  # 👥 Assign 2 if urgent, otherwise 1
+
+            for _ in range(num_assignees):
+                if user_index >= len(user_queue):
+                    user_index = 0  # cycle back if needed
+
+                user_id = user_queue[user_index]
+                user = db.session.get(User, user_id)
+
+                if user and user not in task.assigned_users:
+                    task.assigned_users.append(user)
+                    assigned_users.append(user.userId)
+
+                user_index += 1
+
+            db.session.commit()
+            task_dict = task.to_dict()
+            task_dict["new_assigned_users"] = assigned_users  # Debug info
+            distributed_tasks.append(task_dict)
+
+        return jsonify(distributed_tasks), 200
+
+
+
+
+
+
+  
 
 
 # ==================================================== Main ========================================================== #

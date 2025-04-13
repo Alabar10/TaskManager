@@ -133,6 +133,7 @@ class GroupTask(db.Model):
     deadline = db.Column(db.DateTime, nullable=True)  
     priority = db.Column(db.Integer, nullable=False)
     status = db.Column(db.String(50), default="Pending")
+    category = db.Column(db.String(100), default="General") 
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
     
@@ -152,6 +153,7 @@ class GroupTask(db.Model):
             "deadline": self.deadline.strftime("%Y-%m-%d %H:%M:%S") if isinstance(self.deadline, datetime) else None, 
             "priority": self.priority,
             "status": self.status,
+            "category": self.category,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
             "assigned_users": [user.userId for user in self.assigned_users]

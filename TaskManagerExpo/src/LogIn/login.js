@@ -125,7 +125,7 @@ const Login = ({ navigation }) => {
       {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
       {/* Forgot Password */}
-      <TouchableOpacity onPress={() => navigation.navigate('ResetEmail')}>
+      <TouchableOpacity onPress={() => navigation.navigate('RequestReset')}>
         <Text style={styles.forgotPassword}>Forgot password?</Text>
       </TouchableOpacity>
 

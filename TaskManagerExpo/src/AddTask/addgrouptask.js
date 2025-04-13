@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView, Modal } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
+  ActivityIndicator, ScrollView, Modal
+} from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import config from '../config'; // Adjust the path based on your file structure
+import config from '../config';
+import { useRoute } from '@react-navigation/native';
 
 const priorityMap = {
   'Important and Urgent': 1,
@@ -13,11 +17,12 @@ const priorityMap = {
   'Not Important and Not Urgent': 4,
 };
 const priorityOptions = Object.keys(priorityMap);
+const statusOptions = ['To Do', 'In Progress', 'Done'];
 
 const AddGroupTask = ({ navigation }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [deadline, setDeadline] = useState('');
+  const [deadline, setDeadline] = useState(null);
   const [priority, setPriority] = useState('');
   const [status, setStatus] = useState('To Do');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -27,33 +32,16 @@ const AddGroupTask = ({ navigation }) => {
   const [tempTime, setTempTime] = useState(new Date());
   const [dateField, setDateField] = useState('');
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
-  const [estimatedTime, setEstimatedTime] = useState(null);
-  const statusOptions = ['To Do', 'In Progress', 'Done'];
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-
-  const handleDateChange = (event, selectedDate) => {
-    if (selectedDate) {
-      setTempDate(selectedDate);
-      if (dateField === "deadline") {
-        setDeadline(selectedDate);
-      }
-    } else {
-      setTempDate(new Date());
-    }
-  };
-
-  const handleTimeChange = (event, selectedTime) => {
-    if (event.type === "set" && selectedTime) {
-      if (dateField === "deadline") {
-        const updatedDate = new Date(deadline);
-        updatedDate.setHours(selectedTime.getHours());
-        updatedDate.setMinutes(selectedTime.getMinutes());
-        setDeadline(updatedDate);
-      }
-    }
-    setShowTimePicker(false);
-    setDateField(null);
-  };
+  const [estimatedTime, setEstimatedTime] = useState(null);
+  const [estimatedCompletion, setEstimatedCompletion] = useState(null);
+  const [startTime] = useState(new Date());
+  const [category, setCategory] = useState('General');
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryOptions = ['General', 'coding', 'writing', 'reading', 'exercising'];
+  const route = useRoute();
+  const { groupId } = route.params;
+  
 
   const openDatePicker = (field) => {
     setDateField(field);
@@ -88,64 +76,88 @@ const AddGroupTask = ({ navigation }) => {
     return new Date(date).toLocaleDateString();
   };
 
-  const handleCreateGroupTask = async () => {
-    if (!title || !description || !deadline || !priority) {
-      Alert.alert('Error', 'All fields are required.');
-      return;
-    }
-
-    const priorityNumber = priorityMap[priority];
-    if (!priorityNumber) {
-      Alert.alert('Error', 'Invalid priority selected.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const userId = await AsyncStorage.getItem('userId');
-      const groupId = await AsyncStorage.getItem('groupId'); 
-       // Log the request payload
-      console.log("Sending request payload:", {
-      title,
-      description,
-      deadline: deadline ? new Date(deadline).toISOString() : null,
-      priority: priorityNumber,
-      status,
-      group_id: groupId
-    });
-      const response = await axios.post(`${config.API_URL}/group-tasks`, {
-        title,
-        description,
-        deadline,
-        priority: priorityNumber,
-        status,
-        group_id: groupId
-      });
-
-      Alert.alert('Success', 'Group task created successfully!');
-      navigation.goBack();
-    } catch (error) {
-      Alert.alert('Error', error.response?.data.message || 'Failed to create group task. Please ensure all fields are filled out correctly.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchEstimatedTime = async (selectedPriority) => {
+  const fetchEstimatedTime = async (selectedPriority, selectedCategory = category) => {
     setEstimatedTime(null);
+    setEstimatedCompletion(null);
+  
+    if (!selectedPriority || !startTime || !deadline || !selectedCategory) {
+      Alert.alert("Error", "Please select priority, category, and deadline first.");
+      return;
+    }
+  
+    const priorityNumber = priorityMap[selectedPriority];
+    const startTimeISO = new Date(startTime).toISOString();
+    const deadlineISO = new Date(deadline).toISOString();
+  
+    const requestData = {
+      category: selectedCategory,
+      priority: priorityNumber,
+      estimated_time: estimatedTime && estimatedTime > 0 ? estimatedTime : 60,
+      start_time: startTimeISO,
+      deadline: deadlineISO,
+    };
+  
     try {
-      const response = await axios.post(`${config.API_URL}/predict-task-time`, {
-        priority: priorityMap[selectedPriority],
-      });
-
-      if (response.data.predicted_time) {
-        setEstimatedTime(response.data.predicted_time);
+      const response = await axios.post(`${config.API_URL}/predict`, requestData);
+      if (response.data.predicted_time_minutes) {
+        setEstimatedTime(response.data.predicted_time_minutes);
+        const predictedCompletion = new Date(
+          new Date(startTime).getTime() + response.data.predicted_time_minutes * 60000
+        );
+        setEstimatedCompletion(predictedCompletion.toLocaleString());
       }
     } catch (error) {
       console.error("Error fetching estimated time:", error);
       Alert.alert('Error', 'Failed to fetch estimated time.');
     }
   };
+  
+
+  const handleCreateGroupTask = async () => {
+    if (!title || !description || !deadline || !priority) {
+      Alert.alert('Error', 'All fields are required.');
+      return;
+    }
+    
+    const priorityNumber = priorityMap[priority];
+    setIsLoading(true);
+  
+    try {
+      const userId = await AsyncStorage.getItem('userId');
+  
+      if (!groupId) {
+        throw new Error('No group ID found. Please select a group.');
+      }
+  
+      const response = await axios.post(`${config.API_URL}/group-tasks`, {
+        title,
+        description,
+        deadline,
+        priority: priorityNumber,
+        status,
+        category,
+        group_id: groupId
+      });
+  
+      Alert.alert('Success', 'Group task created successfully!');
+      navigation.goBack();
+    } catch (error) {
+      console.log("🧠 groupId from AsyncStorage:", groupId);
+      console.log("📤 Sending task data:", {
+        title,
+        description,
+        deadline,
+        priority: priorityNumber,
+        status,
+        category,
+        group_id: groupId
+      });
+      Alert.alert('Error', error.response?.data.message || error.message || 'Failed to create group task.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -153,9 +165,10 @@ const AddGroupTask = ({ navigation }) => {
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
         </TouchableOpacity>
+
         <Text style={styles.heading}>Add a New Group Task</Text>
 
-        {/* Task Title */}
+        {/* Title */}
         <View style={styles.inputContainer}>
           <MaterialCommunityIcons name="format-title" size={24} color="#6A5ACD" style={styles.icon} />
           <TextInput
@@ -167,7 +180,7 @@ const AddGroupTask = ({ navigation }) => {
           />
         </View>
 
-        {/* Task Description */}
+        {/* Description */}
         <View style={styles.inputContainer}>
           <MaterialCommunityIcons name="text" size={24} color="#6A5ACD" style={styles.icon} />
           <TextInput
@@ -180,7 +193,7 @@ const AddGroupTask = ({ navigation }) => {
           />
         </View>
 
-        {/* Deadline Selection */}
+        {/* Deadline Picker */}
         <TouchableOpacity style={styles.inputContainer} onPress={() => openDatePicker("deadline")}>
           <MaterialCommunityIcons name="calendar" size={24} color="#6A5ACD" style={styles.icon} />
           <View style={styles.dateTextContainer}>
@@ -193,7 +206,7 @@ const AddGroupTask = ({ navigation }) => {
           </View>
         </TouchableOpacity>
 
-        {/* Priority Dropdown */}
+        {/* Priority Picker */}
         <TouchableOpacity style={styles.inputContainer} onPress={() => setShowPriorityDropdown(true)}>
           <MaterialCommunityIcons name="priority-high" size={24} color="#6A5ACD" style={styles.icon} />
           <View style={styles.dateTextContainer}>
@@ -202,35 +215,48 @@ const AddGroupTask = ({ navigation }) => {
           </View>
         </TouchableOpacity>
 
-        {/* Status Dropdown */}
+        {/* Status Picker */}
         <TouchableOpacity style={styles.inputContainer} onPress={() => setShowStatusDropdown(true)}>
           <MaterialCommunityIcons name="progress-check" size={24} color="#6A5ACD" style={styles.icon} />
           <View style={styles.dateTextContainer}>
             <Text style={styles.label}>Status</Text>
-            <Text style={styles.value}>{status || 'Select Status'}</Text>
+            <Text style={styles.value}>{status}</Text>
           </View>
         </TouchableOpacity>
 
-        {/* Estimated Time */}
+        <TouchableOpacity style={styles.inputContainer} onPress={() => setShowCategoryDropdown(true)}>
+        <MaterialCommunityIcons name="shape" size={24} color="#6A5ACD" style={styles.icon} />
+        <View style={styles.dateTextContainer}>
+          <Text style={styles.label}>Category</Text>
+          <Text style={styles.value}>{category || 'Select Category'}</Text>
+        </View>
+      </TouchableOpacity>
+
+
+        {/* Estimated Info */}
         {estimatedTime !== null && (
           <View style={styles.estimatedContainer}>
             <MaterialCommunityIcons name="clock" size={24} color="#6A5ACD" style={styles.icon} />
-            <Text style={styles.estimatedText}>Estimated Completion Time: {estimatedTime} minutes</Text>
+            <Text style={styles.estimatedText}>Estimated Time: {estimatedTime} minutes</Text>
+          </View>
+        )}
+        {estimatedCompletion && (
+          <View style={styles.estimatedContainer}>
+            <MaterialCommunityIcons name="calendar-check" size={24} color="#6A5ACD" style={styles.icon} />
+            <Text style={styles.estimatedText}>Est. Completion: {estimatedCompletion}</Text>
           </View>
         )}
 
-        {/* Date Picker Modal */}
+        {/* Modals */}
         {showDatePicker && (
           <Modal transparent animationType="slide" visible={showDatePicker}>
             <View style={styles.modalOverlay}>
               <View style={styles.pickerContainer}>
                 <DateTimePicker
-                  value={tempDate || new Date()}
+                  value={tempDate}
                   mode="date"
                   display="spinner"
-                  themeVariant="dark"
-                  textColor="black"
-                  onChange={handleDateChange}
+                  onChange={(event, selectedDate) => setTempDate(selectedDate || new Date())}
                 />
                 <TouchableOpacity style={styles.doneButton} onPress={confirmDateSelection}>
                   <Text style={styles.buttonText}>Done</Text>
@@ -240,18 +266,15 @@ const AddGroupTask = ({ navigation }) => {
           </Modal>
         )}
 
-        {/* Time Picker Modal */}
         {showTimePicker && (
           <Modal transparent animationType="slide" visible={showTimePicker}>
             <View style={styles.modalOverlay}>
               <View style={styles.pickerContainer}>
                 <DateTimePicker
-                  value={tempTime || new Date()}
+                  value={tempTime}
                   mode="time"
                   display="spinner"
-                  themeVariant="dark"
-                  textColor="black"
-                  onChange={handleTimeChange}
+                  onChange={(event, selectedTime) => setTempTime(selectedTime || new Date())}
                 />
                 <TouchableOpacity style={styles.doneButton} onPress={confirmTimeSelection}>
                   <Text style={styles.buttonText}>Done</Text>
@@ -261,19 +284,14 @@ const AddGroupTask = ({ navigation }) => {
           </Modal>
         )}
 
-        {/* Priority Selection Modal */}
-        <Modal
-          visible={showPriorityDropdown}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowPriorityDropdown(false)}
-        >
+        {/* Priority Modal */}
+        <Modal visible={showPriorityDropdown} transparent animationType="slide">
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Select Priority</Text>
-              {priorityOptions.map((option, index) => (
+              {priorityOptions.map((option, i) => (
                 <TouchableOpacity
-                  key={index}
+                  key={`priority-${i}`}
                   style={styles.option}
                   onPress={() => {
                     setPriority(option);
@@ -288,19 +306,14 @@ const AddGroupTask = ({ navigation }) => {
           </View>
         </Modal>
 
-        {/* Status Selection Modal */}
-        <Modal
-          visible={showStatusDropdown}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowStatusDropdown(false)}
-        >
+        {/* Status Modal */}
+        <Modal visible={showStatusDropdown} transparent animationType="slide">
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Task Status</Text>
-              {statusOptions.map((option, index) => (
+              <Text style={styles.modalTitle}>Select Status</Text>
+              {statusOptions.map((option, i) => (
                 <TouchableOpacity
-                  key={index}
+                  key={`status-${i}`}
                   style={styles.option}
                   onPress={() => {
                     setStatus(option);
@@ -314,12 +327,39 @@ const AddGroupTask = ({ navigation }) => {
           </View>
         </Modal>
 
-        {/* Create Task Button */}
+        <Modal
+          visible={showCategoryDropdown}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowCategoryDropdown(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              {categoryOptions.map((option, index) => (
+                <TouchableOpacity
+                  key={`category-${index}`}
+                  style={styles.option}
+                  onPress={() => {
+                    setCategory(option);
+                    fetchEstimatedTime(priority, option);
+                    setShowCategoryDropdown(false);
+                  }}
+                >
+                  <Text style={styles.optionText}>{option}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </Modal>
+
+
+        {/* Submit Button */}
         {isLoading ? (
           <ActivityIndicator size="large" color="#6A5ACD" />
         ) : (
-          <TouchableOpacity style={styles.button} onPress={handleCreateGroupTask} disabled={isLoading}>
-            <Text style={styles.buttonText}>{isLoading ? 'Creating...' : 'Create Group Task'}</Text>
+          <TouchableOpacity style={styles.button} onPress={handleCreateGroupTask}>
+            <Text style={styles.buttonText}>Create Group Task</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -346,18 +386,14 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
     elevation: 5,
   },
   heading: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
     textAlign: 'center',
     marginTop: 60,
+    marginBottom: 20,
     color: '#6A5ACD',
   },
   inputContainer: {
@@ -389,56 +425,28 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: 'bold',
   },
+  estimatedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  estimatedText: {
+    marginLeft: 10,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#6A5ACD',
+  },
   button: {
     backgroundColor: '#6A5ACD',
     paddingVertical: 15,
     borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
     marginTop: 20,
   },
   buttonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    width: '80%',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#6A5ACD',
-  },
-  option: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
-  },
-  optionText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  estimatedContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 10,
-  },
-  estimatedText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#6A5ACD',
-    marginLeft: 10,
   },
   modalOverlay: {
     flex: 1,
@@ -458,6 +466,33 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     alignItems: 'center',
     marginTop: 10,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#6A5ACD',
+    marginBottom: 20,
+  },
+  option: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#333',
   },
 });
 
