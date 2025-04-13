@@ -31,6 +31,7 @@ import CurrentSchedule from "./src/AIScreen/CurrentSchedule";
 import ChatWithAI from "./src/AIScreen/ChatWithAI";
 import RequestReset from "./src/ResetEmail/RequestReset";
 import * as Linking from 'expo-linking'; 
+import GroupChatScreen from "./src/GroupChatScreen/GroupChatScreen"
 
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
@@ -163,6 +164,8 @@ const App = () => (
             <Stack.Screen name="CurrentSchedule" component={CurrentSchedule} />
             <Stack.Screen name="AI Chat" component={ChatWithAI} />
             <Stack.Screen name="RequestReset" component={RequestReset} />
+            <Stack.Screen name="GroupChat" component={GroupChatScreen} />
+
 
             
           </Stack.Navigator>

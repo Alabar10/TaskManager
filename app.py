@@ -1,6 +1,6 @@
 from json import encoder
 import os
-from flask import Flask, jsonify, request, session, make_response, url_for,render_template_string
+from flask import Flask, jsonify, request, session, make_response, url_for,render_template_string,send_from_directory
 from flask_cors import CORS, cross_origin  
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,7 +10,7 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from datetime import datetime,timedelta
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
-from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association,UserFreeSchedule,UserSchedule
+from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association,UserFreeSchedule,UserSchedule,GroupMessage
 from extensions import db, mail, jwt
 import logging
 import numpy as np
@@ -23,6 +23,7 @@ from AI.AiChat import generate_ai_advice
 from itsdangerous import URLSafeTimedSerializer
 from urllib.parse import quote
 from collections import defaultdict
+from werkzeug.utils import secure_filename
 
 
 # Load environment variables
@@ -1176,6 +1177,79 @@ def routes(app):
 
         return jsonify(result)
 
+    @app.route('/groups/<int:group_id>/chat',methods=['POST'])
+    def group_chat(group_id):
+        data = request.get_json()
+        user_id=data.get("user_id")
+        content=data.get("content")
+
+        if not user_id or not content:
+            return jsonify({"message": "User ID and content are required"}), 400
+        
+        new_message = GroupMessage(
+        group_id=group_id,
+        user_id=user_id,
+        content=content,
+        timestamp=datetime.utcnow()
+        )
+
+        db.session.add(new_message)
+        db.session.commit()
+        return jsonify(new_message.to_dict()), 201
+    
+
+    @app.route('/groups/<int:group_id>/chat', methods=['GET'])
+    def get_group_messages(group_id):
+        messages = GroupMessage.query.filter_by(group_id=group_id).order_by(GroupMessage.timestamp.asc()).all()
+        return jsonify([{
+            "id": m.id,
+            "group_id": m.group_id,
+            "user_id": m.user_id,
+            "username": m.user.username,  # make sure relationship exists
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat()
+        } for m in messages])
+
+    UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+    @app.route('/groups/<int:group_id>/chat/upload', methods=['POST'])
+    def upload_chat_file(group_id):
+        user_id = request.form.get('user_id')
+        file = request.files.get('file')
+        content = request.form.get('content', "") 
+
+        if not user_id or not file:
+            return jsonify({"message": "User ID and file are required"}), 400
+
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(file_path)
+
+        file_url = f"/uploads/{filename}"
+
+        new_message = GroupMessage(
+            group_id=group_id,
+            user_id=user_id,
+            content=content,  
+            file_url=file_url,
+            timestamp=datetime.utcnow()
+        )
+        print("🔍 user_id:", user_id)
+        print("🔍 file:", file)
+        print("🔍 request.form:", request.form)
+        print("🔍 request.files:", request.files)
+
+        db.session.add(new_message)
+        db.session.commit()
+
+        return jsonify(new_message.to_dict()), 201
+ 
+
+    @app.route('/uploads/<filename>')
+    def uploaded_file(filename):
+        return send_from_directory(UPLOAD_FOLDER, filename)
+
 
 
 
@@ -1304,6 +1378,12 @@ def routes(app):
                 PersonalTask.user_id == user_id,
                 PersonalTask.status == "In Progress"
             ).order_by(PersonalTask.priority.asc(), PersonalTask.due_date.asc()).all()
+            group_tasks = db.session.query(GroupTask).join(task_user_association).filter(
+                task_user_association.c.user_id == user_id,
+                GroupTask.status == "In Progress"
+            ).order_by(GroupTask.priority.asc(), GroupTask.deadline.asc()).all()
+
+
 
             if not tasks:
                 return jsonify({"message": "No in-progress tasks found."}), 404
@@ -1362,7 +1442,8 @@ def routes(app):
             available_slots = {day: slots.copy() for day, slots in week_days.items()}
 
             # Schedule each task across multiple available slots
-            for task in tasks:
+            all_tasks = tasks + group_tasks
+            for task in all_tasks:
                 remaining_hours = task_hours.get(task.id, 0)
                 scheduled_chunks = 0
 
@@ -1374,12 +1455,23 @@ def routes(app):
                         start_time = slot.strftime("%H:%M")
 
                         # Save to daily schedule
+                        is_group_task = hasattr(task, "group_id")
+                        group_name = None
+
+                        if is_group_task:
+                            group = db.session.query(Group).filter_by(id=task.group_id).first()
+                            group_name = group.name if group else "Unknown Group"
+
                         daily_map[day].append({
                             "task": task.title,
+                            "group_name": getattr(task.group, "name", None) if hasattr(task, "group") else None,
                             "priority": task.priority,
-                            "time": 1,  # 1-hour chunk
-                            "start_time": start_time
+                            "time": 1,
+                            "start_time": start_time,
+                            "group": group_name if is_group_task else None
                         })
+
+
 
                         remaining_hours -= 1
                         scheduled_chunks += 1

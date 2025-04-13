@@ -213,3 +213,28 @@ class UserSchedule(db.Model):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
         }
+    
+
+class GroupMessage(db.Model):
+    __tablename__ = 'GroupMessages'
+
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('Groups.id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('Users.userId'), nullable=False)
+    content = db.Column(db.Text, nullable=True)  # <--- ensure this is nullable
+    file_url = db.Column(db.String(255), nullable=True)
+    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+    user = db.relationship('User')  # ✅ so we can do `m.user.username`
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "group_id": self.group_id,
+            "user_id": self.user_id,
+            "username": self.user.username if self.user else "Unknown",
+            "content": self.content,
+            "file_url": self.file_url,
+            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S") if self.timestamp else None
+        }
+

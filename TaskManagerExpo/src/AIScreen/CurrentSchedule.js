@@ -126,6 +126,7 @@ const CurrentSchedule = () => {
       formatted[dateStr].push(
         ...entry.tasks.map((task) => ({
           name: task.task || "Unnamed Task",
+          groupName: task.group_name || null,
           height: (task.time || 1) * 50,
           startTime: task.start_time || "00:00",
           priority: task.priority || 4,
@@ -215,7 +216,10 @@ const CurrentSchedule = () => {
                         </Text>
                       </View>
                       <View style={styles.taskContent}>
-                        <Text style={styles.taskTitle}>{task.name}</Text>
+                      <Text style={styles.taskTitle}>{task.name}</Text>
+                        {task.groupName && (
+                          <Text style={styles.groupNameLabel}>Group: {task.groupName}</Text>
+                        )}
                         <Text style={styles.taskPriority}>
                           {formatTimeRange(task.startTime, task.duration)}
                           {task.priority === 1 ? " • High Priority" : 

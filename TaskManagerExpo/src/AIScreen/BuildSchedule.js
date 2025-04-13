@@ -21,7 +21,6 @@ const BuildSchedule = () => {
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [generatingSchedule, setGeneratingSchedule] = useState(false);
   const [schedule, setSchedule] = useState([]);
-  const [tasks, setTasks] = useState([]);
   const [taskHours, setTaskHours] = useState({});
   const [warningMessage, setWarningMessage] = useState("");
   const [totalAvailableHours, setTotalAvailableHours] = useState(0);
@@ -29,6 +28,7 @@ const BuildSchedule = () => {
   const navigation = useNavigation();
   const { userId } = useAuth();
   const [structuredTasks, setStructuredTasks] = useState({ personal: [], groups: {} });
+  const allTasks = [...structuredTasks.personal, ...Object.values(structuredTasks.groups).flat()];
 
   useEffect(() => {
     const fetchData = async () => {
@@ -134,7 +134,9 @@ const BuildSchedule = () => {
   
     setGeneratingSchedule(true);
     setWarningMessage("");
-  
+    
+
+
     try {
       const totalRequestedHours = Object.values(taskHours).reduce(
         (sum, hours) => sum + parseInt(hours || "0"), 0
@@ -179,7 +181,7 @@ const BuildSchedule = () => {
           console.log("Error details:", saveError.message);
           console.log("Full error:", saveError);
         }
-  
+
         if (data.unassigned_tasks?.length) {
           setWarningMessage(`Couldn't schedule: ${data.unassigned_tasks.join(", ")}`);
         } else {
@@ -320,15 +322,17 @@ const BuildSchedule = () => {
         )}
   
         {/* Generate Button */}
+        {/* ✅ Generate Button */}
         <TouchableOpacity
-          style={[styles.button, (generatingSchedule || !tasks.length) && styles.disabledButton]}
+          style={[styles.button, (generatingSchedule || !allTasks.length) && styles.disabledButton]}
           onPress={generateSchedule}
-          disabled={!tasks.length || generatingSchedule}
+          disabled={!allTasks.length || generatingSchedule}
         >
           <Text style={styles.buttonText}>
             {generatingSchedule ? "Generating..." : "Generate Schedule"}
           </Text>
         </TouchableOpacity>
+
   
         {/* Schedule & Chart */}
         {schedule.length > 0 && (
@@ -343,8 +347,12 @@ const BuildSchedule = () => {
                     {dayTasks.map((task, i) => (
                       <View key={i} style={styles.taskTimeContainer}>
                         <Text style={styles.taskTime}>{task.taskTime}</Text>
-                        <Text style={styles.scheduleItem}>{task.name || task.title}</Text>
-                      </View>
+                        <Text style={styles.scheduleItem}>
+                          {task.task || task.name || task.title}
+                          {task.group_name ? ` (Group: ${task.group_name})` : ""}
+                        </Text>
+
+                        </View>
                     ))}
                   </View>
                 );

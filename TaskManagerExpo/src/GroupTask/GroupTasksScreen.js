@@ -12,7 +12,7 @@ const GroupTasksScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
   const { groupId, groupName } = route.params;
-
+  const [menuVisible, setMenuVisible] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreator, setIsCreator] = useState(false); // Tracks if the current user is the group creator
@@ -260,51 +260,66 @@ const GroupTasksScreen = () => {
         />
       )}
 
-      {/* Show View Members button */}
-      <TouchableOpacity
-        style={styles.viewMembersButton}
-        onPress={() => navigation.navigate("GroupMembers", { groupId })}
-      >
-        <Text style={styles.viewMembersText}>👥 View Members</Text>
-      </TouchableOpacity>
-
-      {isCreator && (
-      <TouchableOpacity
-        style={[styles.fab, { bottom: 200, backgroundColor: "#00BFFF" }]} // position it above others
-        onPress={handleDistributeTasks}
-      >
-        <Text style={styles.fabText}>🤖 AI Distribute</Text>
-      </TouchableOpacity>
-    )}
-
-
-      {/* Show Add Task button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => navigation.navigate("AddGroupTask", { groupId })}
-      >
-        <Text style={styles.fabText}>+ Add Task</Text>
-      </TouchableOpacity>
-
-      {/* Show Add User button only if the current user is the group creator */}
-      {isCreator && (
         <TouchableOpacity
-          style={styles.addUserButton}
-          onPress={() => navigation.navigate("AddUserToGroup", { groupId })}
+          style={[styles.fab, { bottom: 20 }]}
+          onPress={() => setMenuVisible(!menuVisible)}
         >
-          <Text style={styles.addUserText}>+ Add User</Text>
+          <Text style={styles.fabText}>⚙️ Options</Text>
         </TouchableOpacity>
-      )}
+        {menuVisible && (
+            <>
+              <TouchableOpacity
+                style={[styles.fabMenuItem, { bottom: 80 }]}
+                onPress={() => navigation.navigate("GroupMembers", { groupId })}
+              >
+                <Text style={styles.fabText}>👥 View Members</Text>
+              </TouchableOpacity>
 
-      {/* Show Delete Group button only if the current user is the group creator */}
-      {isCreator && (
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={handleDeleteGroup}
-        >
-          <Text style={styles.deleteButtonText}>Delete Group</Text>
-        </TouchableOpacity>
-      )}
+              {isCreator && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.fabMenuItem, { bottom: 140 }]}
+                    onPress={() => navigation.navigate("AddUserToGroup", { groupId })}
+                  >
+                    <Text style={styles.fabText}>➕ Add User</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                  style={[styles.fabMenuItem, { bottom: 200 }]}
+                  onPress={() => navigation.navigate("AddGroupTask", { groupId })}
+                >
+                  <Text style={styles.fabText}>+ Add Task</Text>
+                </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.fabMenuItem, { bottom: 200 }]}
+                    onPress={handleDistributeTasks}
+                  >
+                    <Text style={styles.fabText}>🤖 AI Distribute</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.fabMenuItem, { bottom: 260, backgroundColor: "#DC143C" }]}
+                    onPress={handleDeleteGroup}
+                  >
+                    <Text style={styles.fabText}>🗑 Delete Group</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
+
+
+     
+
+    
+    <TouchableOpacity
+      style={styles.chatButton}
+      onPress={() => navigation.navigate("GroupChat", { groupId, groupName })}
+    >
+      <Text style={styles.chatButtonText}>💬</Text>
+    </TouchableOpacity>
+
     </LinearGradient>
   );
 };
@@ -342,6 +357,20 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
+  fabMenuItem: {
+    position: "absolute",
+    right: 20,
+    backgroundColor: "#6A5ACD",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  
   taskTitle: {
     fontSize: 18,
     fontWeight: "bold",
@@ -466,6 +495,26 @@ userChipText: {
   fontSize: 13,
   color: "#333",
   fontWeight: "500",
+},
+chatButton: {
+  position: "absolute",
+  top: 40,
+  right: 20,
+  backgroundColor: "#6A5ACD",
+  borderRadius: 30,
+  paddingVertical: 8,
+  paddingHorizontal: 12,
+  zIndex: 999,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.2,
+  shadowRadius: 4,
+  elevation: 5,
+},
+chatButtonText: {
+  color: "#fff",
+  fontSize: 18,
+  fontWeight: "bold",
 },
 
 });
