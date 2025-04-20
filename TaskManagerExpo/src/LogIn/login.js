@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,23 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  ScrollView
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import config from '../config'; // Adjust the path based on your file structure
+import config from '../config';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { auth } from '../firebase';
+import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
+import { makeRedirectUri } from 'expo-auth-session';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const Login = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -18,6 +31,24 @@ const Login = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isFocused, setIsFocused] = useState({
+    email: false,
+    password: false
+  });
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: config.GOOGLE_CLIENT_ID,
+    iosClientId: config.IOS_CLIENT_ID,
+    expoClientId: config.EXPO_CLIENT_ID,
+    redirectUri: makeRedirectUri({
+      useProxy: true,
+    }),
+    responseType: 'id_token',
+  });
+  
+  
+  
+  
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -26,9 +57,7 @@ const Login = ({ navigation }) => {
     }
   
     setIsLoading(true);
-    console.log('Debug: Sending login request with:', { email, password });
-    console.log('API URL:', config.API_URL); // Debugging the API URL
-  
+    
     try {
       const response = await fetch(`${config.API_URL}/login`, {
         method: 'POST',
@@ -39,20 +68,16 @@ const Login = ({ navigation }) => {
       });
   
       const data = await response.json();
-      console.log('Debug: Response JSON:', data);
   
       setIsLoading(false);
   
       if (response.ok) {
-        // Check if the token is available in the response
         if (data.token) {
-          // Store the token in AsyncStorage
-          await AsyncStorage.setItem('userToken', data.token);  // Store the JWT token
-          // Optionally store userId if needed
+          await AsyncStorage.setItem('userToken', data.token);
           await AsyncStorage.setItem('userId', String(data.userId));
   
           Alert.alert('Success', `Welcome, ${data.username}`);
-          navigation.replace('DrawerNavigator'); // Navigate to DrawerNavigator
+          navigation.replace('DrawerNavigator');
         } else {
           Alert.alert('Error', 'No token returned from the server.');
         }
@@ -71,7 +96,31 @@ const Login = ({ navigation }) => {
     }
   };
 
-  // Clear error message if the user starts typing again
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.authentication || {};
+  
+      if (!id_token) {
+        Alert.alert('Error', 'Missing ID token from Google response.');
+        return;
+      }
+  
+      const credential = GoogleAuthProvider.credential(id_token);
+  
+      signInWithCredential(auth, credential)
+        .then(async (userCredential) => {
+          const user = userCredential.user;
+          await AsyncStorage.setItem('userToken', user.uid);
+          await AsyncStorage.setItem('userEmail', user.email);
+          navigation.replace('DrawerNavigator');
+        })
+        .catch((err) => {
+          console.error('❌ Firebase sign-in error:', err);
+          Alert.alert('Error', 'Firebase login failed.');
+        });
+    }
+  }, [response]);
+  
   const handleEmailChange = (text) => {
     setEmail(text);
     setErrorMessage('');
@@ -83,137 +132,335 @@ const Login = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Login</Text>
-
-      {/* Email Input */}
-      <View style={styles.inputContainer}>
-        <MaterialCommunityIcons name="account" size={20} color="#666" style={styles.icon} />
-        <TextInput
-          style={styles.input}
-          placeholder="Type your email"
-          value={email}
-          onChangeText={handleEmailChange}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-      </View>
-
-      {/* Password Input */}
-      <View style={styles.inputContainer}>
-        <MaterialCommunityIcons name="lock" size={20} color="#666" style={styles.icon} />
-        <TextInput
-          style={styles.input}
-          placeholder="Type your password"
-          value={password}
-          onChangeText={handlePasswordChange}
-          secureTextEntry={!showPassword}
-        />
-        <TouchableOpacity
-          style={styles.showPasswordButton}
-          onPress={() => setShowPassword((prevState) => !prevState)}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
         >
-          <MaterialCommunityIcons
-            name={showPassword ? 'eye' : 'eye-off'}
-            size={20}
-            color="#666"
-          />
-        </TouchableOpacity>
-      </View>
+          {/* Logo Section */}
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../../assets/images/splash-icon.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
 
-      {/* Error Message */}
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          {/* Header Text */}
+          <Text style={styles.heading}>Welcome</Text>
+          <Text style={styles.subheading}>Log in to continue</Text>
 
-      {/* Forgot Password */}
-      <TouchableOpacity onPress={() => navigation.navigate('RequestReset')}>
-        <Text style={styles.forgotPassword}>Forgot password?</Text>
-      </TouchableOpacity>
+          {/* Google Login Button */}
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={() => promptAsync()}
+            disabled={!request}
+            activeOpacity={0.8}
+          >
+            <View style={styles.googleIconContainer}>
+              <MaterialCommunityIcons
+                name="google"
+                size={20}
+                color="#DB4437"
+              />
+            </View>
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
 
-      {/* Login Button */}
-      {isLoading ? (
-        <ActivityIndicator size="large" color="#0000ff" />
-      ) : (
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.loginButtonText}>LOGIN</Text>
-        </TouchableOpacity>
-      )}
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
-      {/* Register Link */}
-      <View style={styles.registerContainer}>
-        <Text>Don't have an account?</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.registerLink}>Register Here</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+          {/* Email Input */}
+          <View style={[
+            styles.inputContainer,
+            isFocused.email && styles.inputContainerFocused
+          ]}>
+            <View style={styles.inputIconContainer}>
+              <MaterialCommunityIcons
+                name="email-outline"
+                size={20}
+                color={isFocused.email ? '#6A5ACD' : '#999'}
+              />
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#999"
+              value={email}
+              onChangeText={handleEmailChange}
+              onFocus={() => setIsFocused({ ...isFocused, email: true })}
+              onBlur={() => setIsFocused({ ...isFocused, email: false })}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+            />
+          </View>
+  
+          {/* Password Input */}
+          <View style={[
+            styles.inputContainer,
+            isFocused.password && styles.inputContainerFocused
+          ]}>
+            <View style={styles.inputIconContainer}>
+              <MaterialCommunityIcons
+                name="lock-outline"
+                size={20}
+                color={isFocused.password ? '#6A5ACD' : '#999'}
+              />
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={handlePasswordChange}
+              onFocus={() => setIsFocused({ ...isFocused, password: true })}
+              onBlur={() => setIsFocused({ ...isFocused, password: false })}
+              secureTextEntry={!showPassword}
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+            />
+            <TouchableOpacity
+              style={styles.showPasswordButton}
+              onPress={() => setShowPassword((prev) => !prev)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <MaterialCommunityIcons
+                name={showPassword ? 'eye-outline' : 'eye-off-outline'}
+                size={20}
+                color="#999"
+              />
+            </TouchableOpacity>
+          </View>
+  
+          {/* Error Message */}
+          {errorMessage ? (
+            <View style={styles.errorContainer}>
+              <MaterialCommunityIcons
+                name="alert-circle-outline"
+                size={18}
+                color="#FF3B30"
+              />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+  
+          {/* Forgot Password */}
+          <TouchableOpacity
+            style={styles.forgotPasswordContainer}
+            onPress={() => navigation.navigate('RequestReset')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.forgotPassword}>Forgot password?</Text>
+          </TouchableOpacity>
+  
+          {/* Login Button */}
+          <TouchableOpacity
+            style={[
+              styles.loginButton,
+              isLoading && styles.loginButtonDisabled
+            ]}
+            onPress={handleLogin}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.loginButtonText}>Log In</Text>
+            )}
+          </TouchableOpacity>
+  
+          {/* Register Link */}
+          <View style={styles.registerContainer}>
+            <Text style={styles.registerText}>Don't have an account?</Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Register')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.registerLink}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 16,
     backgroundColor: '#fff',
   },
+  scrollContainer: {
+    flexGrow: 1,
+    padding: 24,
+    justifyContent: 'center',
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 30,
+    padding: 7,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 40,
+    alignSelf: 'center',
+    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  logoImage: {
+    width: 150,
+    height: 140,
+  },
   heading: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 40,
     color: '#333',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  subheading: {
+    fontSize: 16,
+    textAlign: 'center',
+    color: '#666',
+    marginBottom: 32,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginBottom: 24,
+  },
+  googleIconContainer: {
+    backgroundColor: 'white',
+    padding: 6,
+    borderRadius: 6,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  googleButtonText: {
+    fontSize: 16,
+    color: '#5f6368',
+    fontWeight: '600',
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#EEE',
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    color: '#999',
+    fontSize: 14,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
-    marginBottom: 20,
-    paddingHorizontal: 10,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 10,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    height: 56,
+  },
+  inputContainerFocused: {
+    borderColor: '#6A5ACD',
+    backgroundColor: '#FFF',
+    boxShadow: '0px 0px 8px rgba(106, 90, 205, 0.1)',
+    elevation: 2,
+  },
+  inputIconContainer: {
+    marginRight: 12,
+    width: 24,
+    alignItems: 'center',
   },
   input: {
     flex: 1,
-    height: 40,
+    height: '100%',
     fontSize: 16,
-    paddingLeft: 10,
-  },
-  icon: {
-    marginRight: 10,
+    color: '#333',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   showPasswordButton: {
-    padding: 5,
+    padding: 8,
+    marginLeft: 8,
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginBottom: 24,
   },
   forgotPassword: {
     color: '#6A5ACD',
-    textAlign: 'right',
-    marginBottom: 20,
+    fontSize: 14,
+    fontWeight: '500',
   },
   loginButton: {
     backgroundColor: '#6A5ACD',
-    paddingVertical: 12,
-    borderRadius: 5,
+    paddingVertical: 16,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 24,
+    boxShadow: '0px 4px 8px rgba(106, 90, 205, 0.2)',
+    elevation: 4,
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
   },
   loginButtonText: {
-    color: '#fff',
-    fontSize: 18,
+    color: '#FFF',
+    fontSize: 16,
     fontWeight: 'bold',
   },
   registerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: 16,
+  },
+  registerText: {
+    color: '#666',
+    fontSize: 14,
   },
   registerLink: {
     color: '#6A5ACD',
-    marginLeft: 5,
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEBEE',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
   },
   errorText: {
-    color: 'red',
-    textAlign: 'center',
-    marginBottom: 10,
+    color: '#FF3B30',
     fontSize: 14,
+    flex: 1,
+    marginLeft: 8,
   },
 });
 

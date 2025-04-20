@@ -64,7 +64,7 @@ const Register = ({ navigation }) => {
     console.log('API URL:', config.API_URL); // Debugging the API URL
 
     try {
-      const response = await fetch('${config.API_URL}/register', {
+      const response = await fetch(`${config.API_URL}/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

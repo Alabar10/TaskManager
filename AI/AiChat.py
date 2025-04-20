@@ -7,7 +7,7 @@ from datetime import datetime
 load_dotenv()
 
 HF_TOKEN = os.getenv("HF_API_KEY")  # Make sure your key is set in .env or passed securely
-MODEL_ID = "HuggingFaceH4/zephyr-7b-alpha"  # You can use other models like `tiiuae/falcon-7b-instruct` if needed
+MODEL_ID = "HuggingFaceH4/zephyr-7b-beta"  # You can use other models like `tiiuae/falcon-7b-instruct` if needed
 
 headers = {
     "Authorization": f"Bearer {HF_TOKEN}",
