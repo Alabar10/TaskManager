@@ -12,7 +12,7 @@ const CalendarScreen = () => {
   const [error, setError] = useState('');
   const [userGroups, setUserGroups] = useState([]);
 
-  // Fetch user groups when the screen is focused
+  // Fetch user groups when the screen is focused+
   useFocusEffect(
     useCallback(() => {
       if (!userId || !token) return;

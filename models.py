@@ -2,6 +2,7 @@ from datetime import datetime
 from extensions import db
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.dialects.mssql import NVARCHAR
+from sqlalchemy import Unicode, UnicodeText  
 
 
 class User(db.Model):
@@ -9,12 +10,13 @@ class User(db.Model):
     User model to represent users in the database.
     """
     __tablename__ = 'Users'
-    userId = db.Column(db.Integer, primary_key=True)  # Primary key
-    username = db.Column(db.String(50), nullable=False)  # Username
-    password = db.Column(db.String(255), nullable=False)  # Hashed password
-    email = db.Column(db.String(50), unique=True, nullable=False)  # Unique email
-    fname = db.Column(db.String(50), nullable=False)  # First name
-    lname = db.Column(db.String(50), nullable=False)  # Last name
+    userId = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), nullable=False)
+    password = db.Column(db.String(255), nullable=True)  # Nullable for Google users
+    email = db.Column(db.String(50), unique=True, nullable=False)
+    fname = db.Column(db.String(50), nullable=True)  # Nullable
+    lname = db.Column(db.String(50), nullable=True)  # Nullable
+    firebase_uid = db.Column(db.String(255), nullable=True)  # NEW field
 
 
 PRIORITY_CHOICES = {
@@ -26,52 +28,52 @@ PRIORITY_CHOICES = {
 
 class PersonalTask(db.Model):
     __tablename__ = 'PersonalTasks'
+    
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(255), nullable=False)
-    description = db.Column(db.Text)
+    title = db.Column(Unicode(255), nullable=False)  
+    description = db.Column(UnicodeText)  
     due_date = db.Column(db.DateTime, default=db.func.current_timestamp())  
     deadline = db.Column(db.DateTime)
     priority = db.Column(db.Integer, nullable=False)  # Values 1-4 only
-    status = db.Column(db.String(50))
+    status = db.Column(Unicode(50))  
     user_id = db.Column(db.Integer, db.ForeignKey('Users.userId'))
-    category = db.Column(db.String(100), nullable=False, default="General")  # New column
+    category = db.Column(Unicode(100), nullable=False, default="General") 
     actual_time = db.Column(db.DateTime, nullable=True)  
     start_time = db.Column(db.DateTime, nullable=True)  
     estimated_time = db.Column(db.Float, nullable=True) 
-    time_taken = db.Column(db.String(50), nullable=True)  # ✅ Store formatted time taken
+    time_taken = db.Column(Unicode(50), nullable=True)  
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
     def to_dict(self):
-            time_taken = None
-            formatted_time = None
+        time_taken = None
+        formatted_time = None
 
-            if self.actual_time and self.start_time:
-                time_taken = (self.actual_time - self.start_time).total_seconds() / 3600  # Get time in hours
-                
-                # Convert to "X hours, Y minutes" format
-                hours = int(time_taken)
-                minutes = int((time_taken - hours) * 60)
-                formatted_time = f"{hours} hours, {minutes} minutes"
-                
-            return {
-                "id": self.id,
-                "title": self.title,
-                "description": self.description,
-                "due_date": self.due_date.strftime("%Y-%m-%d %H:%M:%S") if self.due_date else None,
-                "deadline": self.deadline.strftime("%Y-%m-%d %H:%M:%S") if self.deadline else None,
-                "priority": PRIORITY_CHOICES.get(self.priority, "Unknown"),
-                "status": self.status,
-                "user_id": self.user_id,
-                "category": self.category, 
-                "actual_time": self.actual_time.strftime("%Y-%m-%d %H:%M:%S") if self.actual_time else None,
-                "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.start_time else None,
-                "estimated_time": round(self.estimated_time, 2) if self.estimated_time is not None else None,  
-                "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
-                "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
-                "time_taken": formatted_time if formatted_time else None  
-            }
-    
+        if self.actual_time and self.start_time:
+            time_taken = (self.actual_time - self.start_time).total_seconds() / 3600  # Get time in hours
+            
+            # Convert to "X hours, Y minutes" format
+            hours = int(time_taken)
+            minutes = int((time_taken - hours) * 60)
+            formatted_time = f"{hours} hours, {minutes} minutes"
+            
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "due_date": self.due_date.strftime("%Y-%m-%d %H:%M:%S") if self.due_date else None,
+            "deadline": self.deadline.strftime("%Y-%m-%d %H:%M:%S") if self.deadline else None,
+            "priority": PRIORITY_CHOICES.get(self.priority, "Unknown"),
+            "status": self.status,
+            "user_id": self.user_id,
+            "category": self.category,
+            "actual_time": self.actual_time.strftime("%Y-%m-%d %H:%M:%S") if self.actual_time else None,
+            "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.start_time else None,
+            "estimated_time": round(self.estimated_time, 2) if self.estimated_time is not None else None,  
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+            "time_taken": formatted_time if formatted_time else None  
+        }
     
 class Task(db.Model):
     __tablename__ = 'Tasks'

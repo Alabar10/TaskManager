@@ -6,8 +6,8 @@ from datetime import datetime
 
 load_dotenv()
 
-HF_TOKEN = os.getenv("HF_API_KEY")  # Make sure your key is set in .env or passed securely
-MODEL_ID = "HuggingFaceH4/zephyr-7b-beta"  # You can use other models like `tiiuae/falcon-7b-instruct` if needed
+HF_TOKEN = os.getenv("HF_API_KEY")
+MODEL_ID = "HuggingFaceH4/zephyr-7b-beta"
 
 headers = {
     "Authorization": f"Bearer {HF_TOKEN}",
@@ -15,88 +15,89 @@ headers = {
 }
 
 def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urgent_tasks):
-    # ✅ Filter out completed tasks
+    small_talk_messages = [
+        "hi", "hello", "hey", "how are you", "what's up", "yo", "?", "what?", 
+        "any advice?", "any tips?", "help?", "motivation?", "can you help?", "some advice?", "anything to suggest?"
+    ]
+
+    # 🧠 Prepare summaries
     personal_tasks = [t for t in personal_tasks if t.get('status') != 'completed']
     group_tasks = [t for t in group_tasks if t.get('status') != 'completed']
     urgent_tasks = [t for t in urgent_tasks if t.get('status') != 'completed']
 
-    # 🧾 Build readable summaries
-    personal_summary = "\n".join(
-        [f"- {t['title']} (Deadline: {t.get('deadline', 'N/A')})" for t in personal_tasks]
-    ) or "No personal tasks."
-
-    group_summary = "\n".join(
-        [f"- {t['title']} (Deadline: {t.get('deadline', 'N/A')})" for t in group_tasks]
-    ) or "No group tasks."
-
-    urgent_summary = "\n".join(
-        [f"- {t['title']} (Deadline: {t.get('deadline', 'N/A')})" for t in urgent_tasks]
-    ) or "No urgent tasks."
-
+    personal_summary = "\n".join([f"- {t['title']} (Deadline: {t.get('deadline', 'N/A')})" for t in personal_tasks]) or "No personal tasks."
+    group_summary = "\n".join([f"- {t['title']} (Deadline: {t.get('deadline', 'N/A')})" for t in group_tasks]) or "No group tasks."
+    urgent_summary = "\n".join([f"- {t['title']} (Deadline: {t.get('deadline', 'N/A')})" for t in urgent_tasks]) or "No urgent tasks."
     schedule_note = schedule_json if schedule_json else "No schedule available."
 
-    # 📅 Include today's actual date so AI knows what "today" means
     today = datetime.now()
-    formatted_date = today.strftime("%A, %B %d, %Y")  # Example: Tuesday, April 01, 2025
-    # Determine current part of day
-    hour = datetime.now().hour
-    if hour < 12:
-        part_of_day = "morning"
-    elif 12 <= hour < 17:
-        part_of_day = "afternoon"
+    formatted_date = today.strftime("%A, %B %d, %Y")
+    hour = today.hour
+    part_of_day = "morning" if hour < 12 else "afternoon" if hour < 17 else "evening"
+
+    # 🛠 Select the correct prompt
+    if message.lower().strip() in small_talk_messages:
+        # 🌟 Small-talk: simple motivational response
+        prompt = f"""
+        You are a smart scheduling and productivity assistant.
+        The user is seeking general advice to stay motivated and productive.
+
+        📅 Today is {formatted_date}, and it's the {part_of_day}.
+
+        🎯 Your job:
+        - Give a motivational, positive, and practical advice in 3–5 sentences.
+        - Encourage time management, healthy breaks, and energy balance.
+        - DO NOT mention specific tasks or schedules.
+        """
     else:
-        part_of_day = "evening"
+        # 🧠 Full detailed task-oriented response
+        prompt = f"""
+        You are a smart and concise scheduling assistant that helps users manage their tasks and time efficiently. 
+        Today is {formatted_date}, and it's currently the {part_of_day}.
 
+        The user is seeking advice about their tasks, productivity, or time management.
+        Your role is to **analyze the user's context** and respond directly with helpful, short advice.
 
-    # 🧠 Final AI prompt
-    prompt = f"""
-    You are a smart and concise scheduling assistant helping users manage their time and tasks effectively.
-    You can greet the user based on the time of day (e.g., "Good morning"), but keep it concise and friendly.
+        ❗Important:
+        - NEVER repeat or mention the user's question.
+        - Focus only on answering what they need.
+        - Keep your response short: 3–5 sentences.
+        - Use natural, supportive language like a helpful assistant.
 
-    📅 Today is: {formatted_date}, and it's currently the {part_of_day}.
+        🧠 Context:
+        - User's weekly schedule:
+        {schedule_note}
 
-    The user asked: "{message}"
+        - Personal tasks (incomplete):
+        {personal_summary}
 
-    ✅ Weekly schedule:
-    {schedule_note}
+        - Group tasks (incomplete):
+        {group_summary}
 
-    🧾 Personal tasks (incomplete):
-    {personal_summary}
+        - Urgent tasks (due within 2 days and incomplete):
+        {urgent_summary}
 
-    👥 Group tasks (incomplete):
-    {group_summary}
+        🎯 Behavior rules:
+        - If the user asks about group tasks, list and prioritize group tasks.
+        - If the user asks about personal tasks, list and prioritize personal tasks.
+        - If the user asks about urgent tasks, focus on urgent tasks.
+        - If the user asks generally about productivity, give general advice about time management and rest.
 
-    ⚠️ Urgent tasks (due within 2 days and incomplete):
-    {urgent_summary}
+        📌 Do not mention dates or times exactly. Just say "soon", "urgent", etc.
+        """
 
-    📌 Important:
-    - Do **not** include exact due dates or timestamps in your reply.
-    - If a task is overdue or due soon, just say it's "urgent", "high priority", or "should be done today".
-    - If the user has many tasks scheduled without breaks, recommend adding rest periods to maintain focus.
-    - If the user has urgent tasks and limited free time, suggest they adjust or clear their schedule to focus on those.
-    - Encourage time management, energy balancing, and motivation.
-    - Use natural, supportive language like a helpful assistant.
-
-    🎯 Your job:
-    Give the user practical advice: what should they focus on today? Which tasks are urgent? 
-    How can they stay productive without burnout? Suggest adjustments to the schedule if needed.
-    Reply in 3–5 sentences.
-
-    """
-
-
-    # 📡 Send request to Hugging Face Inference API
+    # 📡 Send request to Hugging Face
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_new_tokens": 150,
-            "temperature": 0.7,
+            "max_new_tokens": 180,
+            "temperature": 0.75,   
             "top_k": 50,
+            "top_p": 0.95,
             "do_sample": True,
-            "return_full_text": False  
+            "return_full_text": False
         }
     }
-
 
     response = requests.post(
         f"https://api-inference.huggingface.co/models/{MODEL_ID}",
@@ -104,7 +105,7 @@ def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urge
         data=json.dumps(payload)
     )
 
-        # 🔁 Handle response
+    # 🧹 Handle response
     if response.status_code == 200:
         try:
             result = response.json()
@@ -112,10 +113,9 @@ def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urge
             if generated:
                 return generated.strip()
             else:
-                return "⚠️ AI responded, but no content was found."
+                return "⚠️ AI responded, but no content found."
         except Exception as e:
             return f"❌ Hugging Face JSON Error: {str(e)}"
-
     else:
         try:
             error_message = response.json().get("error", "Unknown error")

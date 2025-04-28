@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-jira_bp = Blueprint("jira", __name__)  # ✅ Define the blueprint
+jira_bp = Blueprint("jira", __name__)  
 
 @jira_bp.route("/jira/issues", methods=["GET"])
 def get_jira_issues():

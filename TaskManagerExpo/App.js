@@ -1,11 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
-import {
-  createDrawerNavigator,
-  DrawerContentScrollView,
-  DrawerItemList,
-} from "@react-navigation/drawer";
+import {createDrawerNavigator,DrawerContentScrollView,DrawerItemList,} from "@react-navigation/drawer";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createStackNavigator } from "@react-navigation/stack";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -32,6 +28,11 @@ import ChatWithAI from "./src/AIScreen/ChatWithAI";
 import RequestReset from "./src/ResetEmail/RequestReset";
 import * as Linking from 'expo-linking'; 
 import GroupChatScreen from "./src/GroupChatScreen/GroupChatScreen"
+import { I18nManager } from 'react-native';
+
+// Force RTL layout
+I18nManager.allowRTL(true);
+I18nManager.forceRTL(true);
 
 // Initialize Navigators
 const Drawer = createDrawerNavigator();

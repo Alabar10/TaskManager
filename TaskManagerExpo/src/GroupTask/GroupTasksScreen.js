@@ -292,14 +292,14 @@ const GroupTasksScreen = () => {
                 </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.fabMenuItem, { bottom: 200 }]}
+                    style={[styles.fabMenuItem, { bottom: 260 }]}
                     onPress={handleDistributeTasks}
                   >
                     <Text style={styles.fabText}>🤖 AI Distribute</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.fabMenuItem, { bottom: 260, backgroundColor: "#DC143C" }]}
+                    style={[styles.fabMenuItem, { bottom: 310, backgroundColor: "#DC143C" }]}
                     onPress={handleDeleteGroup}
                   >
                     <Text style={styles.fabText}>🗑 Delete Group</Text>

@@ -35,16 +35,29 @@ const Login = ({ navigation }) => {
     email: false,
     password: false
   });
+  console.log("EXPO_CLIENT_ID", config.EXPO_CLIENT_ID);
+  console.log("IOS_CLIENT_ID", config.IOS_CLIENT_ID);
+  console.log("ANDROID_CLIENT_ID", config.ANDROID_CLIENT_ID);
+  console.log("GOOGLE_CLIENT_ID", config.GOOGLE_CLIENT_ID);
+  
+  // Login.js
+const redirectUri = makeRedirectUri({
+  useProxy: true ,           
+});
 
+  
   const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: config.GOOGLE_CLIENT_ID,
     iosClientId: config.IOS_CLIENT_ID,
+    androidClientId: config.ANDROID_CLIENT_ID,
+    webClientId:config.GOOGLE_CLIENT_ID,  
     expoClientId: config.EXPO_CLIENT_ID,
-    redirectUri: makeRedirectUri({
-      useProxy: true,
-    }),
+    redirectUri,
+
+    scopes: ['profile', 'email'],
     responseType: 'id_token',
   });
+  
+  
   
   
   
@@ -97,8 +110,26 @@ const Login = ({ navigation }) => {
   };
 
   useEffect(() => {
+    console.log('🔁 Google Auth response:', response);
+  
+    if (response?.type === 'error' && response.error === 'access_denied') {
+      Alert.alert(
+        'OAuth Policy Issue',
+        'This app is not yet verified by Google. Please try again later or contact support.'
+      );
+      return;
+    }
+  
     if (response?.type === 'success') {
-      const { id_token } = response.authentication || {};
+      let id_token = response?.authentication?.idToken;
+  
+      if (!id_token && response?.url) {
+        const match = response.url.match(/id_token=([^&]+)/);
+        if (match) {
+          id_token = match[1];
+          console.log("✅ Extracted id_token manually from URL");
+        }
+      }
   
       if (!id_token) {
         Alert.alert('Error', 'Missing ID token from Google response.');
@@ -106,13 +137,33 @@ const Login = ({ navigation }) => {
       }
   
       const credential = GoogleAuthProvider.credential(id_token);
-  
       signInWithCredential(auth, credential)
         .then(async (userCredential) => {
           const user = userCredential.user;
-          await AsyncStorage.setItem('userToken', user.uid);
-          await AsyncStorage.setItem('userEmail', user.email);
-          navigation.replace('DrawerNavigator');
+          const email = user.email;
+          const uid = user.uid;
+  
+          try {
+            const res = await fetch(`${config.API_URL}/google-login`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, uid }),
+            });
+  
+            const data = await res.json();
+  
+            if (res.ok && data.token) {
+              await AsyncStorage.setItem('userToken', data.token);
+              await AsyncStorage.setItem('userId', String(data.userId));
+              await AsyncStorage.setItem('userEmail', email);
+              navigation.replace('DrawerNavigator');
+            } else {
+              Alert.alert('Login Error', data.message || 'Google login failed.');
+            }
+          } catch (error) {
+            console.error('🔥 Backend login error:', error);
+            Alert.alert('Error', 'Could not reach backend.');
+          }
         })
         .catch((err) => {
           console.error('❌ Firebase sign-in error:', err);
@@ -120,6 +171,9 @@ const Login = ({ navigation }) => {
         });
     }
   }, [response]);
+  
+  
+  
   
   const handleEmailChange = (text) => {
     setEmail(text);
@@ -157,7 +211,7 @@ const Login = ({ navigation }) => {
           {/* Google Login Button */}
           <TouchableOpacity
             style={styles.googleButton}
-            onPress={() => promptAsync()}
+            onPress={() => promptAsync({ useProxy: true })}
             disabled={!request}
             activeOpacity={0.8}
           >

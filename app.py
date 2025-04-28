@@ -12,7 +12,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 from models import Task, db, User, PersonalTask, Group, GroupTask, group_user_association, task_user_association,UserFreeSchedule,UserSchedule,GroupMessage
 from extensions import db, mail, jwt
-import logging
 import numpy as np
 import tensorflow as tf  
 import joblib  
@@ -35,6 +34,7 @@ def create_app():
 
     # Application setup
     app = Flask(__name__)
+    app.config['JSON_AS_ASCII'] = False
     app.secret_key = os.getenv('FLASK_APP_SECRET_KEY')
 
 
@@ -50,8 +50,7 @@ def create_app():
     app.register_blueprint(jira_bp)
 
 
-    print("✅ Loaded MAIL_USERNAME:", os.getenv("MAIL_USERNAME"))
-    print("✅ Loaded MAIL_PASSWORD:", os.getenv("MAIL_PASSWORD"))
+   
 
     # Database ORM configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -1029,6 +1028,7 @@ def routes(app):
 
         hashed_password = generate_password_hash(new_password)
         user['password'] = hashed_password
+
         db.session.commit()  
 
 
@@ -1256,8 +1256,45 @@ def routes(app):
         return send_from_directory(UPLOAD_FOLDER, filename)
 
 
+    @app.route('/google-login', methods=['POST'])
+    def google_login():
+        data = request.get_json()
+        email = data.get('email')
+        uid = data.get('uid')  # Not stored, but you may log it for audit
 
+        if not email:
+            return jsonify({"message": "Missing email"}), 400
 
+        try:
+            user = User.query.filter_by(email=email).first()
+
+            if not user:
+                # 🔁 Create a new user with dummy data (customize as needed)
+                user = User(
+                    email=email,
+                    username=email.split('@')[0],  # Just use prefix as username
+                    fname="Google",
+                    lname="User",
+                    password=generate_password_hash("google_login")  # not used
+                )
+                db.session.add(user)
+                db.session.commit()
+                print(f"✅ Registered new Google user: {email}")
+
+            # ✅ Create JWT and return
+            token = create_access_token(identity=user.userId)
+
+            return jsonify({
+                "message": "Login successful",
+                "token": token,
+                "userId": user.userId,
+                "email": user.email,
+                "username": user.username
+            }), 200
+
+        except Exception as e:
+            print(f"❌ Google login error: {str(e)}")
+            return jsonify({"message": "Internal server error"}), 500
 
 
 
@@ -1383,6 +1420,7 @@ def routes(app):
                 PersonalTask.user_id == user_id,
                 PersonalTask.status == "In Progress"
             ).order_by(PersonalTask.priority.asc(), PersonalTask.due_date.asc()).all()
+
             group_tasks = db.session.query(GroupTask).join(task_user_association).filter(
                 task_user_association.c.user_id == user_id,
                 GroupTask.status == "In Progress"
@@ -1390,7 +1428,7 @@ def routes(app):
 
 
 
-            if not tasks:
+            if not tasks and not group_tasks:
                 return jsonify({"message": "No in-progress tasks found."}), 404
 
             # ✅ Parse available time slots
@@ -1591,6 +1629,10 @@ def routes(app):
             if not task:
                 continue
 
+            # 🛑 Skip tasks that are already done
+            if task.status.lower() == "done":
+                continue
+
             # Assign based on urgency
             assigned_users = []
 
@@ -1677,7 +1719,7 @@ if __name__ == '__main__':
             logging.info("Database tables created successfully.")
 
         logging.info("Starting the web server...")
-        app.run(host=os.getenv('HOST_IP', '0.0.0.0'), port=5000,debug=True)
+        app.run(host=os.getenv('HOST_IP', '0.0.0.0'), port=5050,debug=True)
     except Exception as e:
         logging.error(f"Failed to start the application: {e}")
 

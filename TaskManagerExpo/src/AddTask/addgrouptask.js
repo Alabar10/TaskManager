@@ -256,6 +256,7 @@ const AddGroupTask = ({ navigation }) => {
                   value={tempDate}
                   mode="date"
                   display="spinner"
+                  textColor="#000"
                   onChange={(event, selectedDate) => setTempDate(selectedDate || new Date())}
                 />
                 <TouchableOpacity style={styles.doneButton} onPress={confirmDateSelection}>
@@ -274,8 +275,12 @@ const AddGroupTask = ({ navigation }) => {
                   value={tempTime}
                   mode="time"
                   display="spinner"
-                  onChange={(event, selectedTime) => setTempTime(selectedTime || new Date())}
-                />
+                  textColor="#000"
+                  onChange={(event, selectedTime) => {
+                    if (selectedTime) {
+                      setTempTime(selectedTime);
+                    }
+                  }}                />
                 <TouchableOpacity style={styles.doneButton} onPress={confirmTimeSelection}>
                   <Text style={styles.buttonText}>Done</Text>
                 </TouchableOpacity>
