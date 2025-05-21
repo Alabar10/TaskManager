@@ -1,6 +1,5 @@
-from json import encoder
 import os
-from flask import Flask, jsonify, request, session, make_response, url_for,render_template_string,send_from_directory,Blueprint
+from flask import Flask, jsonify, request, session, make_response, url_for,render_template_string,send_from_directory,Blueprint,send_file
 from flask_cors import CORS, cross_origin  
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -25,7 +24,15 @@ from collections import defaultdict
 from werkzeug.utils import secure_filename
 import requests
 from jira_routes import jira_bp  
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import io
+from sqlalchemy.sql import func
 
+
+
+analytics_bp = Blueprint('analytics', __name__)
 
 # Load environment variables
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -50,7 +57,7 @@ def create_app():
     app.register_blueprint(jira_bp)
 
 
-   
+
 
     # Database ORM configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -135,9 +142,9 @@ def create_app():
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         return response
 
-        
-    routes(app)
 
+    routes(app)
+    app.register_blueprint(analytics_bp)
     return app
 
 
@@ -205,7 +212,7 @@ def routes(app):
 
             if user and check_password_hash(user.password, password):  # Validate password
                 # Create the JWT token with the user ID as the identity
-                token = create_access_token(identity=user.userId)
+                token = create_access_token(identity=str(user.userId))  # ✅ Fix
 
                 print(f"Debug: Login successful for userId = {user.userId}")  # Debug
                 return jsonify({
@@ -414,7 +421,7 @@ def routes(app):
         task = PersonalTask.query.get(task_id)  # Ensure PersonalTask is your Task model
         if not task:
             return jsonify({"error": "Task not found"}), 404
-        return jsonify(task.to_dict()), 200  # Ensure PersonalTask has a `to_dict()` method
+        return jsonify(task.to_dict()), 200  # Ensure PersonalTask has a to_dict() method
 
 
 
@@ -435,7 +442,7 @@ def routes(app):
 
     @app.route('/tasks/<int:task_id>', methods=['PUT'])
     def update_task(task_id):
-        task = PersonalTask.query.get(task_id)
+        task = db.session.get(PersonalTask, task_id)
         if not task:
             return jsonify({"error": "Task not found"}), 404
 
@@ -495,7 +502,7 @@ def routes(app):
 
             # Query groups based on parameters
             if group_id:
-                group = Group.query.get(group_id)
+                group = db.session.get(Group, group_id)
                 if not group:
                     return jsonify({"error": "Group not found"}), 404
                 return jsonify(group.to_dict()), 200
@@ -536,7 +543,9 @@ def routes(app):
 
     @app.route('/groups/<int:group_id>/tasks', methods=['GET'])
     def get_group_tasks(group_id):
-        group = Group.query.get(group_id)
+        group = db.session.get(Group, group_id)
+
+
         if not group:
             return jsonify({"message": "Group not found."}), 404
 
@@ -555,7 +564,8 @@ def routes(app):
 
     @app.route('/groups/<int:group_id>/tasks/<int:task_id>', methods=['GET'])
     def get_single_group_task(group_id, task_id):
-        group = Group.query.get(group_id)
+        group = db.session.get(Group, group_id)
+
         if not group:
             return jsonify({"message": "Group not found."}), 404
 
@@ -572,7 +582,8 @@ def routes(app):
 
     @app.route('/groups/<int:group_id>', methods=['DELETE'])
     def delete_group(group_id):
-        group = Group.query.get(group_id)
+        group = db.session.get(Group, group_id)
+
         if not group:
             return jsonify({"message": "Group not found"}), 404
 
@@ -581,19 +592,36 @@ def routes(app):
             return jsonify({"message": "Unauthorized. Only the group creator can delete the group"}), 403
 
         try:
-            # Delete all associated group tasks first
+            print("🔸 Finding Group Task IDs...")
+            task_ids = [t.id for t in GroupTask.query.filter_by(group_id=group_id).all()]
+
+            if task_ids:
+                print(f"🔸 Deleting task_user_association for tasks: {task_ids}")
+                db.session.execute(
+                    task_user_association.delete().where(task_user_association.c.task_id.in_(task_ids))
+                )
+
+            print("🔸 Deleting group tasks...")
             GroupTask.query.filter_by(group_id=group_id).delete()
 
-            # Delete group-user associations
-            db.session.execute(group_user_association.delete().where(group_user_association.c.group_id == group_id))
+            print("🔸 Deleting group-user associations...")
+            db.session.execute(
+                group_user_association.delete().where(group_user_association.c.group_id == group_id)
+            )
 
-            # Delete the group itself
+            print("🔸 Deleting group itself...")
             db.session.delete(group)
+
+            print("✅ Committing...")
             db.session.commit()
+
             return jsonify({"message": "Group deleted successfully"}), 200
+
         except Exception as e:
             db.session.rollback()
+            print("❌ Exception during group deletion:", str(e))  # 👈 will print real cause
             return jsonify({"message": f"Failed to delete group: {str(e)}"}), 500
+
 
 
 
@@ -765,7 +793,8 @@ def routes(app):
 
         try:
             # Retrieve group and user from the database
-            group = Group.query.get(group_id)
+            group = db.session.get(Group, group_id)
+
             if not group:
                 return jsonify({"error": "Group not found"}), 404
 
@@ -1282,7 +1311,7 @@ def routes(app):
                 print(f"✅ Registered new Google user: {email}")
 
             # ✅ Create JWT and return
-            token = create_access_token(identity=user.userId)
+            token = create_access_token(identity=str(user.userId))  
 
             return jsonify({
                 "message": "Login successful",
@@ -1295,9 +1324,131 @@ def routes(app):
         except Exception as e:
             print(f"❌ Google login error: {str(e)}")
             return jsonify({"message": "Internal server error"}), 500
+        
+
+
+    @app.route('/groups/<int:group_id>/members/<int:user_id>', methods=['DELETE'])
+    @jwt_required()
+    def remove_group_member(group_id, user_id):
+        """
+        Remove a user from a group.
+        Only the group creator can remove members.
+        """
+        try:
+            requester_id = int(get_jwt_identity())
+
+            group = Group.query.get(group_id)
+            if not group:
+                return jsonify({"message": "Group not found"}), 404
+
+            if requester_id != group.created_by:
+                return jsonify({"message": "Only the group creator can remove members"}), 403
+
+            if user_id == group.created_by:
+                return jsonify({"message": "Group creator cannot be removed"}), 400
+
+            user_to_remove = User.query.get(user_id)
+            if not user_to_remove or user_to_remove not in group.members:
+                return jsonify({"message": "User is not a member of the group"}), 404
+
+            group.members.remove(user_to_remove)
+            db.session.commit()
+
+            return jsonify({"message": "User removed from group"}), 200
+
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"message": f"Failed to remove member: {str(e)}"}), 500
+        
 
 
 
+    @analytics_bp.route('/api/data/completion_rate_chart')
+    def completion_rate_chart():
+        user_id = 1  # 🔁 Replace with actual authenticated user ID in production
+
+        # Task stats
+        personal_completed = db.session.query(PersonalTask).filter_by(user_id=user_id, status='Completed').count()
+        group_completed = db.session.query(task_user_association).join(GroupTask).filter(
+            task_user_association.c.user_id == user_id,
+            GroupTask.status == 'Completed'
+        ).count()
+
+        total_tasks = personal_completed + group_completed
+
+        if total_tasks == 0:
+            # ⚠️ Avoid dividing by zero
+            fig, ax = plt.subplots()
+            ax.text(0.5, 0.5, 'No completed tasks yet', ha='center', va='center', fontsize=12)
+            ax.axis('off')
+            plt.title("Task Completion Breakdown (No Data)")
+        else:
+            labels = ['Personal Tasks', 'Group Tasks']
+            values = [personal_completed, group_completed]
+
+            fig, ax = plt.subplots()
+            ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
+            ax.axis('equal')
+            plt.title(f'Task Completion Breakdown (Total: {total_tasks})')
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        plt.close(fig)
+        return send_file(buf, mimetype='image/png')
+
+    from sqlalchemy import extract
+
+
+    @analytics_bp.route('/api/data/monthly_stats/<int:user_id>')
+    def monthly_stats(user_id):
+        try:
+            results = db.session.query(
+                extract('year', PersonalTask.actual_time).label('year'),
+                extract('month', PersonalTask.actual_time).label('month'),
+                func.count(PersonalTask.id)
+            ).filter(
+                PersonalTask.user_id == user_id,
+                PersonalTask.status == 'Completed',
+                PersonalTask.actual_time != None
+            ).group_by('year', 'month').order_by('year', 'month').all()
+
+            stats = [
+                {
+                    "month": f"{int(year)}-{int(month):02}",
+                    "completed_tasks": count
+                }
+                for year, month, count in results
+            ]
+            return jsonify(stats), 200
+        except Exception as e:
+            return jsonify({"error": f"Failed to generate monthly stats: {str(e)}"}), 500
+
+    @analytics_bp.route('/api/data/time_taken_stats/<int:user_id>')
+    def time_taken_stats(user_id):
+        try:
+            results = db.session.query(
+                PersonalTask.category,
+                func.avg(
+                    func.datediff(func.second, PersonalTask.start_time, PersonalTask.actual_time)
+                ).label("avg_seconds")
+            ).filter(
+                PersonalTask.user_id == user_id,
+                PersonalTask.status == 'Completed',
+                PersonalTask.start_time != None,
+                PersonalTask.actual_time != None
+            ).group_by(PersonalTask.category).all()
+
+            stats = [
+                {
+                    "category": category,
+                    "avg_minutes": round(avg_seconds / 60, 2) if avg_seconds else 0
+                }
+                for category, avg_seconds in results
+            ]
+            return jsonify(stats), 200
+        except Exception as e:
+            return jsonify({"error": f"Failed to generate time taken stats: {str(e)}"}), 500
 
 
  # ============================= 📌 AI Prediction API Endpoint ============================= #
@@ -1662,6 +1813,10 @@ def routes(app):
             distributed_tasks.append(task_dict)
 
         return jsonify(distributed_tasks), 200
+    
+
+    
+
 
 
 
@@ -1722,12 +1877,3 @@ if __name__ == '__main__':
         app.run(host=os.getenv('HOST_IP', '0.0.0.0'), port=5050,debug=True)
     except Exception as e:
         logging.error(f"Failed to start the application: {e}")
-
-
-
-
-
-
-
-
-

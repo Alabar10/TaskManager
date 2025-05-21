@@ -289,7 +289,7 @@ const HomePage = () => {
               ]}
               onPress={() => {
                 setAiModalVisible(false);
-                navigation.navigate("AI Chat");
+                navigation.navigate("ChatWithAI");
               }}
               onPressIn={() => setIsChatPressed(true)}
               onPressOut={() => setIsChatPressed(false)}

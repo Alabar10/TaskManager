@@ -27,32 +27,23 @@ import CurrentSchedule from "./src/AIScreen/CurrentSchedule";
 import ChatWithAI from "./src/AIScreen/ChatWithAI";
 import RequestReset from "./src/ResetEmail/RequestReset";
 import * as Linking from 'expo-linking'; 
-import GroupChatScreen from "./src/GroupChatScreen/GroupChatScreen"
-import { I18nManager } from 'react-native';
-
-// Force RTL layout
-I18nManager.allowRTL(true);
-I18nManager.forceRTL(true);
-
+import GroupChatScreen from "./src/GroupChatScreen/GroupChatScreen";
+import CalendarScreen from "./src/Calendar/CalendarScreen";
+import data from "./src/Data/data"; // Ensure correct path to your data file
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
-const DataPlaceholder = () => <View />;
+const DataPlaceholder = () => <View style={styles.dataPlaceholder}><Text>Data Screen</Text></View>;
+
 const linking = {
   prefixes: ['myapp://'],
   config: {
     screens: {
-      ResetFromLink: {
-        path: 'reset',
-        parse: {
-          token: (token) => `${token}`,
-        },
-      },
+      ResetFromLink: 'reset',
     },
   },
 };
-
 
 
 // Custom Drawer Content
@@ -66,7 +57,7 @@ const CustomDrawerContent = (props) => {
         text: "Log Out",
         style: "destructive",
         onPress: () => {
-          logout(); // Clear userId
+          logout();
           props.navigation.reset({
             index: 0,
             routes: [{ name: "Login" }],
@@ -75,10 +66,6 @@ const CustomDrawerContent = (props) => {
       },
     ]);
   };
-
-
-  
-
 
   return (
     <View style={{ flex: 1 }}>
@@ -95,16 +82,16 @@ const CustomDrawerContent = (props) => {
   );
 };
 
-// Tab Navigator
+// Tab Navigator - Matches your screenshot with Home, Calendar, Schedule, data
 const TabNavigator = () => (
   <Tab.Navigator
     screenOptions={({ route, navigation }) => ({
       tabBarIcon: ({ color, size }) => {
         let iconName;
         if (route.name === "Home") iconName = "home";
-        else if (route.name === "Calendar") iconName = "calendar-today";
-        else if (route.name === "Schedule") iconName = "chart-line";
-        else if (route.name === "data") iconName = "cog";
+        else if (route.name === "Calendar") iconName = "calendar";
+        else if (route.name === "Schedule") iconName = "calendar-clock";
+        else if (route.name === "data") iconName = "database";
 
         return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
       },
@@ -123,22 +110,32 @@ const TabNavigator = () => (
       ),
     })}
   >
-    <Tab.Screen name="Home" component={HomePage} />
-    <Tab.Screen name="Calendar" component={require("./src/Calendar/CalendarScreen").default} />
+    <Tab.Screen 
+      name="Home" 
+      component={HomePage} 
+      options={{ title: "Task Manager" }} 
+    />
+    <Tab.Screen name="Calendar" component={CalendarScreen} />
     <Tab.Screen name="Schedule" component={Schedule} />
     <Tab.Screen name="data" component={DataPlaceholder} />
-    </Tab.Navigator>
+  </Tab.Navigator>
 );
 
 // Drawer Navigator
 const DrawerNavigator = () => (
   <Drawer.Navigator
     drawerContent={(props) => <CustomDrawerContent {...props} />}
-    screenOptions={{ headerShown: false }}
+    screenOptions={{
+      headerShown: false,
+      drawerType: "back",              
+      swipeEnabled: false,            
+      overlayColor: "transparent",     
+      drawerStyle: { width: '70%' },     
+    }}
   >
-    <Drawer.Screen name="Task Manager" component={TabNavigator} />
+    <Drawer.Screen name="Main" component={TabNavigator} />
     <Drawer.Screen name="Settings" component={Settings} />
-
+    
   </Drawer.Navigator>
 );
 
@@ -151,24 +148,23 @@ const App = () => (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={Register} />
+            <Stack.Screen name="GroupTasks" component={GroupTasksScreen} />
             <Stack.Screen name="DrawerNavigator" component={DrawerNavigator} />
             <Stack.Screen name="ResetFromLink" component={ResetFromLink} />
             <Stack.Screen name="ResetPassword" component={ResetPassword} />
             <Stack.Screen name="AddTask" component={AddTask} />
             <Stack.Screen name="TaskDetails" component={TaskDetailsScreen} />
-            <Stack.Screen name="GroupTasks" component={GroupTasksScreen} />
             <Stack.Screen name="AddGroupTask" component={AddGroupTask} />
             <Stack.Screen name="Addgroup" component={Addgroup} />
             <Stack.Screen name="AddUserToGroup" component={AddUserToGroup} />
             <Stack.Screen name="GroupMembers" component={GroupMembersScreen} />
             <Stack.Screen name="BuildSchedule" component={BuildSchedule} />
             <Stack.Screen name="CurrentSchedule" component={CurrentSchedule} />
-            <Stack.Screen name="AI Chat" component={ChatWithAI} />
             <Stack.Screen name="RequestReset" component={RequestReset} />
             <Stack.Screen name="GroupChat" component={GroupChatScreen} />
+            <Stack.Screen name="ChatWithAI" component={ChatWithAI} />
+            <Stack.Screen name="data" component={data} />
 
-
-            
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>
@@ -176,8 +172,6 @@ const App = () => (
   </SafeAreaProvider>
 );
 
-
-// Styles
 const styles = StyleSheet.create({
   screenContainer: {
     flex: 1,
@@ -201,6 +195,11 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+  dataPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
+  }
 });
 
 export default App;

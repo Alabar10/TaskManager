@@ -99,6 +99,44 @@ const GroupMembersScreen = () => {
     fetchMembers();
   }, [groupId]);
 
+  const handleRemoveMember = async (userIdToRemove) => {
+    try {
+      const token = await AsyncStorage.getItem("userToken");
+  
+      if (!token) {
+        throw new Error("Authentication info missing. Please log in again.");
+      }
+  
+      const response = await fetch(
+        `${config.API_URL}/groups/${groupId}/members/${userIdToRemove}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+  
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = errorText;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorText;
+        } catch {}
+        throw new Error(`Failed to remove member: ${errorMessage}`);
+      }
+  
+      Alert.alert("Success", "Member removed successfully");
+      setMembers((prev) => prev.filter((m) => m.userId !== userIdToRemove));
+  
+    } catch (error) {
+      console.error("Remove Member Error:", error.message);
+      Alert.alert("Error", error.message);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -115,19 +153,47 @@ const GroupMembersScreen = () => {
           keyExtractor={(item) => item.userId.toString()}
           renderItem={({ item }) => (
             <View style={styles.memberItem}>
-              <Text style={styles.memberName}>
-                {item.username} {item.userId === groupCreatorId && <Text style={styles.adminBadge}> (Admin)</Text>}
-              </Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={styles.memberName}>
+                  {item.username}
+                  {item.userId === groupCreatorId && <Text style={styles.adminBadge}> (Admin)</Text>}
+                </Text>
+          
+                {item.userId !== groupCreatorId && (
+                  <TouchableOpacity
+                    style={styles.removeButton}
+                    onPress={() =>
+                      Alert.alert(
+                        "Remove Member",
+                        `Are you sure you want to remove ${item.username}?`,
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Remove",
+                            style: "destructive",
+                            onPress: () => handleRemoveMember(item.userId),
+                          },
+                        ]
+                      )
+                    }
+                  >
+                    <MaterialCommunityIcons name="account-remove" size={24} color="red" />
+                  </TouchableOpacity>
+                )}
+              </View>
               <Text style={styles.memberEmail}>{item.email}</Text>
               <Text style={styles.memberFullName}>{item.fname} {item.lname}</Text>
             </View>
           )}
+          
           ListEmptyComponent={<Text style={styles.emptyText}>No members found.</Text>}
         />
       )}
     </View>
   );
 };
+
+
 
 const styles = StyleSheet.create({
   container: {
@@ -185,6 +251,12 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontSize: 16,
   },
+  removeButton: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: "#fce4ec",
+  },
+  
 });
 
 export default GroupMembersScreen;

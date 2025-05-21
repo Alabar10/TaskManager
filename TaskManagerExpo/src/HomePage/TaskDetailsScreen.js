@@ -290,6 +290,38 @@ const handleSave = async () => {
         title,
         () => handleEdit('title')
       )}
+      {showEditModal && (
+        <Modal transparent animationType="slide" visible={showEditModal}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.editModal}>
+              <Text style={styles.modalTitle}>Edit {editingField === "title" ? "Title" : "Description"}</Text>
+
+              <TextInput
+                style={styles.input}
+                multiline
+                numberOfLines={4}
+                placeholder={`Enter ${editingField}`}
+                value={editingField === "title" ? title : description}
+                onChangeText={(text) => {
+                  if (editingField === "title") setTitle(text);
+                  else setDescription(text);
+                }}
+              />
+
+              <TouchableOpacity
+                style={styles.doneButton}
+                onPress={() => {
+                  setShowEditModal(false);
+                  setEditingField(null);
+                }}
+              >
+                <Text style={styles.buttonText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
   
       {renderRow(
         <MaterialIcons name="description" size={20} color="#6A5ACD" />,
