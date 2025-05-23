@@ -29,7 +29,7 @@ import RequestReset from "./src/ResetEmail/RequestReset";
 import * as Linking from 'expo-linking'; 
 import GroupChatScreen from "./src/GroupChatScreen/GroupChatScreen";
 import CalendarScreen from "./src/Calendar/CalendarScreen";
-import data from "./src/Data/data"; // Ensure correct path to your data file
+import DataScreen from "./src/Data/data"; // Ensure correct path to your data file
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
@@ -117,7 +117,7 @@ const TabNavigator = () => (
     />
     <Tab.Screen name="Calendar" component={CalendarScreen} />
     <Tab.Screen name="Schedule" component={Schedule} />
-    <Tab.Screen name="data" component={DataPlaceholder} />
+    <Tab.Screen name="data" component={DataScreen} />
   </Tab.Navigator>
 );
 
@@ -163,7 +163,7 @@ const App = () => (
             <Stack.Screen name="RequestReset" component={RequestReset} />
             <Stack.Screen name="GroupChat" component={GroupChatScreen} />
             <Stack.Screen name="ChatWithAI" component={ChatWithAI} />
-            <Stack.Screen name="data" component={data} />
+            <Stack.Screen name="data" component={DataScreen} />
 
           </Stack.Navigator>
         </NavigationContainer>

@@ -185,7 +185,7 @@ def routes(app):
 
         # Create a new user with hashed password
         try:
-            hashed_password = generate_password_hash(password)  # Hash the password
+            hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
             new_user = User(username=username, email=email, password=hashed_password, fname=fname, lname=lname)
             db.session.add(new_user)
             db.session.commit()
@@ -291,11 +291,13 @@ def routes(app):
 
             # If a new password is provided, hash and update it
             if password:
-                user.password = generate_password_hash(password)
+                user.password = generate_password_hash(password, method='pbkdf2:sha256')
 
             db.session.commit()  # Save changes
             return jsonify({"message": "User info updated successfully"}), 200
         except Exception as e:
+            import traceback
+            traceback.print_exc()   
             db.session.rollback()  # Rollback changes in case of an error
             return jsonify({"message": f"Failed to update user info: {str(e)}"}), 500
 
@@ -1055,13 +1057,13 @@ def routes(app):
         if not user:
             return jsonify({'message': 'User not found'}), 404
 
-        hashed_password = generate_password_hash(new_password)
-        user['password'] = hashed_password
+        hashed_password = generate_password_hash(new_password, method='pbkdf2:sha256')
+        user.password = hashed_password
 
-        db.session.commit()  
-
+        db.session.commit()
 
         return jsonify({'message': 'Password reset successful'}), 200
+
     
 
 
@@ -1365,53 +1367,56 @@ def routes(app):
 
     @analytics_bp.route('/api/data/completion_rate_chart')
     def completion_rate_chart():
-        user_id = 1  # 🔁 Replace with actual authenticated user ID in production
+        user_id = request.args.get('user_id', type=int, default=1)  # Or use from JWT session in production
 
-        # Task stats
-        personal_completed = db.session.query(PersonalTask).filter_by(user_id=user_id, status='Completed').count()
+        personal_completed = db.session.query(PersonalTask).filter_by(user_id=user_id, status='Done').count()
         group_completed = db.session.query(task_user_association).join(GroupTask).filter(
             task_user_association.c.user_id == user_id,
-            GroupTask.status == 'Completed'
+            GroupTask.status == 'Done'
         ).count()
 
         total_tasks = personal_completed + group_completed
 
+        fig, ax = plt.subplots()
         if total_tasks == 0:
-            # ⚠️ Avoid dividing by zero
-            fig, ax = plt.subplots()
             ax.text(0.5, 0.5, 'No completed tasks yet', ha='center', va='center', fontsize=12)
             ax.axis('off')
             plt.title("Task Completion Breakdown (No Data)")
         else:
             labels = ['Personal Tasks', 'Group Tasks']
             values = [personal_completed, group_completed]
-
-            fig, ax = plt.subplots()
             ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
             ax.axis('equal')
             plt.title(f'Task Completion Breakdown (Total: {total_tasks})')
 
         buf = io.BytesIO()
-        plt.savefig(buf, format='png')
+        plt.savefig(buf, format='png', bbox_inches='tight')
         buf.seek(0)
         plt.close(fig)
         return send_file(buf, mimetype='image/png')
 
-    from sqlalchemy import extract
-
+    from sqlalchemy import extract, func
+    from flask import jsonify
 
     @analytics_bp.route('/api/data/monthly_stats/<int:user_id>')
     def monthly_stats(user_id):
         try:
+            year_expr = extract('year', PersonalTask.actual_time)
+            month_expr = extract('month', PersonalTask.actual_time)
+
             results = db.session.query(
-                extract('year', PersonalTask.actual_time).label('year'),
-                extract('month', PersonalTask.actual_time).label('month'),
+                year_expr.label('year'),
+                month_expr.label('month'),
                 func.count(PersonalTask.id)
             ).filter(
                 PersonalTask.user_id == user_id,
-                PersonalTask.status == 'Completed',
-                PersonalTask.actual_time != None
-            ).group_by('year', 'month').order_by('year', 'month').all()
+                PersonalTask.status == 'Done',
+                PersonalTask.actual_time.isnot(None)
+            ).group_by(
+                year_expr, month_expr
+            ).order_by(
+                year_expr, month_expr
+            ).all()
 
             stats = [
                 {
@@ -1421,34 +1426,65 @@ def routes(app):
                 for year, month, count in results
             ]
             return jsonify(stats), 200
+
         except Exception as e:
             return jsonify({"error": f"Failed to generate monthly stats: {str(e)}"}), 500
+
+    from sqlalchemy.sql import text
 
     @analytics_bp.route('/api/data/time_taken_stats/<int:user_id>')
     def time_taken_stats(user_id):
         try:
-            results = db.session.query(
-                PersonalTask.category,
-                func.avg(
-                    func.datediff(func.second, PersonalTask.start_time, PersonalTask.actual_time)
-                ).label("avg_seconds")
-            ).filter(
-                PersonalTask.user_id == user_id,
-                PersonalTask.status == 'Completed',
-                PersonalTask.start_time != None,
-                PersonalTask.actual_time != None
-            ).group_by(PersonalTask.category).all()
+            results = db.session.execute(text("""
+                SELECT category,
+                    AVG(DATEDIFF(SECOND, start_time, actual_time)) AS avg_seconds
+                FROM PersonalTasks
+                WHERE user_id = :user_id
+                AND status = 'Done'
+                AND start_time IS NOT NULL
+                AND actual_time IS NOT NULL
+                GROUP BY category
+            """), {'user_id': user_id}).fetchall()
 
             stats = [
                 {
-                    "category": category,
-                    "avg_minutes": round(avg_seconds / 60, 2) if avg_seconds else 0
+                    "category": row.category,
+                    "avg_minutes": round(row.avg_seconds / 60, 2) if row.avg_seconds else 0
                 }
-                for category, avg_seconds in results
+                for row in results
             ]
             return jsonify(stats), 200
+
         except Exception as e:
             return jsonify({"error": f"Failed to generate time taken stats: {str(e)}"}), 500
+        
+
+    @analytics_bp.route('/api/data/on_time_stats/<int:user_id>')
+    def on_time_stats(user_id):
+        try:
+            on_time = db.session.query(PersonalTask).filter(
+                PersonalTask.user_id == user_id,
+                PersonalTask.status == 'Done',
+                PersonalTask.actual_time.isnot(None),
+                PersonalTask.deadline.isnot(None),
+                PersonalTask.actual_time <= PersonalTask.deadline
+            ).count()
+
+            late = db.session.query(PersonalTask).filter(
+                PersonalTask.user_id == user_id,
+                PersonalTask.status == 'Done',
+                PersonalTask.actual_time.isnot(None),
+                PersonalTask.deadline.isnot(None),
+                PersonalTask.actual_time > PersonalTask.deadline
+            ).count()
+
+            return jsonify({
+                "on_time": on_time,
+                "late": late
+            }), 200
+
+        except Exception as e:
+            return jsonify({"error": f"Failed to calculate on-time stats: {str(e)}"}), 500
 
 
  # ============================= 📌 AI Prediction API Endpoint ============================= #

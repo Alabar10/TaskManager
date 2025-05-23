@@ -1,4 +1,4 @@
-const API_URL = 'http://192.168.1.41:5050';
+const API_URL = 'http://192.168.1.42:5050';
 
 const EXPO_CLIENT_ID = '983537645385-mda9ma2t86i9tg12e9gtapcehn9l204c.apps.googleusercontent.com';
 const IOS_CLIENT_ID = '983537645385-p85ks7rk5mmmp664pr7f25e43g397qo6.apps.googleusercontent.com';

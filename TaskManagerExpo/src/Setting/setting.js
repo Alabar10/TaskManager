@@ -86,8 +86,8 @@ const Settings = ({ navigation }) => {
     }
 
     try {
-      const updatedData = { ...user, password: user.password || undefined };
-      const response = await fetch("http://127.0.0.1:5000/update_user", {
+      const updatedData = { ...user,userId, password: user.password || undefined };
+      const response = await fetch(`${config.API_URL}/update_user`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedData),
