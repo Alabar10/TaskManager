@@ -1,16 +1,16 @@
-const API_URL = 'http://192.168.1.42:5050';
+const EXPO_CLIENT_ID = '499894714296-j74bou0she8bm1kt6hm69s4mj6ppl6oc.apps.googleusercontent.com';
+const ANDROID_CLIENT_ID = '499894714296-tdok8ra91f9kp2e6mdi8a5l1pjf90ogh.apps.googleusercontent.com';
+const IOS_CLIENT_ID = '499894714296-ulggt45kbk57hgog8fek8u0aa7qgll3.apps.googleusercontent.com';
 
-const EXPO_CLIENT_ID = '983537645385-mda9ma2t86i9tg12e9gtapcehn9l204c.apps.googleusercontent.com';
-const IOS_CLIENT_ID = '983537645385-p85ks7rk5mmmp664pr7f25e43g397qo6.apps.googleusercontent.com';
-const ANDROID_CLIENT_ID = '983537645385-7k9drr4dlae60erjo8mt0u4pp6q1b98c.apps.googleusercontent.com';
-
-// Always use Web Client ID for Expo Go (proxy auth)
+// Use EXPO_CLIENT_ID also as GOOGLE_CLIENT_ID for web (Expo Go)
 const GOOGLE_CLIENT_ID = EXPO_CLIENT_ID;
 
+const API_URL = 'http://192.168.1.42:5050/'; // Your Flask backend
+
 export default {
-  API_URL,
   EXPO_CLIENT_ID,
-  IOS_CLIENT_ID,
   ANDROID_CLIENT_ID,
-  GOOGLE_CLIENT_ID, 
+  IOS_CLIENT_ID,
+  GOOGLE_CLIENT_ID,
+  API_URL,
 };

@@ -1,3 +1,7 @@
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import Constants from 'expo-constants';
+import { makeRedirectUri } from 'expo-auth-session';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -17,10 +21,6 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import config from '../config';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
-import { makeRedirectUri } from 'expo-auth-session';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -41,8 +41,9 @@ const Login = ({ navigation }) => {
   
   // Login.js
 const redirectUri = makeRedirectUri({
-  useProxy: true ,           
+  useProxy: true,
 });
+
 
   
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -109,67 +110,68 @@ const redirectUri = makeRedirectUri({
   };
 
   useEffect(() => {
-    console.log('🔁 Google Auth response:', response);
-  
-    if (response?.type === 'error' && response.error === 'access_denied') {
-      Alert.alert(
-        'OAuth Policy Issue',
-        'This app is not yet verified by Google. Please try again later or contact support.'
-      );
+  console.log("🔁 Google Auth response object:", response);
+
+  if (response?.type === 'success') {
+    console.log("✅ Google Auth success");
+    const { id_token } = response.authentication || {};
+    console.log("🧾 ID Token:", id_token);
+
+    if (!id_token) {
+      console.warn("⚠️ ID Token is missing");
+      Alert.alert("Error", "Google login failed: no token returned.");
       return;
     }
-  
-    if (response?.type === 'success') {
-      let id_token = response?.authentication?.idToken;
-  
-      if (!id_token && response?.url) {
-        const match = response.url.match(/id_token=([^&]+)/);
-        if (match) {
-          id_token = match[1];
-          console.log("✅ Extracted id_token manually from URL");
-        }
-      }
-  
-      if (!id_token) {
-        Alert.alert('Error', 'Missing ID token from Google response.');
-        return;
-      }
-  
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential)
-        .then(async (userCredential) => {
-          const user = userCredential.user;
-          const email = user.email;
-          const uid = user.uid;
-  
-          try {
-            const res = await fetch(`${config.API_URL}/google-login`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email, uid }),
-            });
-  
-            const data = await res.json();
-  
-            if (res.ok && data.token) {
-              await AsyncStorage.setItem('userToken', data.token);
-              await AsyncStorage.setItem('userId', String(data.userId));
-              await AsyncStorage.setItem('userEmail', email);
-              navigation.replace('DrawerNavigator');
-            } else {
-              Alert.alert('Login Error', data.message || 'Google login failed.');
-            }
-          } catch (error) {
-            console.error('🔥 Backend login error:', error);
-            Alert.alert('Error', 'Could not reach backend.');
+
+    const credential = GoogleAuthProvider.credential(id_token);
+
+    console.log("🔐 Signing in with Firebase credential...");
+    signInWithCredential(auth, credential)
+      .then(async (userCredential) => {
+        console.log("✅ Firebase Sign-In success");
+
+        const user = userCredential.user;
+        const email = user.email;
+        const uid = user.uid;
+
+        console.log("📧 Email:", email);
+        console.log("🆔 UID:", uid);
+
+        try {
+          const res = await fetch(`${config.API_URL}/google-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, uid }),
+          });
+
+          const data = await res.json();
+          console.log("📦 Backend response:", data);
+
+          if (res.ok && data.token) {
+            console.log("✅ Token saved to AsyncStorage");
+            await AsyncStorage.setItem('userToken', data.token);
+            await AsyncStorage.setItem('userId', String(data.userId));
+            await AsyncStorage.setItem('userEmail', email);
+            navigation.replace('DrawerNavigator');
+          } else {
+            console.warn("❌ Server returned error:", data.message);
+            Alert.alert('Login Error', data.message || 'Google login failed.');
           }
-        })
-        .catch((err) => {
-          console.error('❌ Firebase sign-in error:', err);
-          Alert.alert('Error', 'Firebase login failed.');
-        });
-    }
-  }, [response]);
+        } catch (error) {
+          console.error('🔥 Backend login error:', error);
+          Alert.alert('Error', 'Could not reach backend.');
+        }
+      })
+      .catch((err) => {
+        console.error('❌ Firebase sign-in error:', err);
+        Alert.alert('Error', 'Firebase login failed.');
+      });
+  } else if (response?.type === 'error') {
+    console.log("❌ Google Auth error:", response.error);
+    Alert.alert("Error", "Google login failed to start.");
+  }
+}, [response]);
+
   
   
   
@@ -210,7 +212,17 @@ const redirectUri = makeRedirectUri({
           {/* Google Login Button */}
           <TouchableOpacity
             style={styles.googleButton}
-            onPress={() => promptAsync({ useProxy: true })}
+            onPress={() => {
+              console.log("🔘 Google Sign-In button pressed");
+              if (request) {
+                promptAsync({ useProxy: true });
+                console.log("📤 promptAsync called with useProxy: true");
+              } else {
+                console.warn("⚠️ Google auth request not ready");
+                Alert.alert("Error", "Google login is not ready yet.");
+              }
+            }}
+
             disabled={!request}
             activeOpacity={0.8}
           >

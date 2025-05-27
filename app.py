@@ -29,6 +29,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import io
 from sqlalchemy.sql import func
+from collections import defaultdict
+import random
+from datetime import datetime, timedelta
 
 
 
@@ -747,11 +750,22 @@ def routes(app):
         task.due_date = data.get('due_date', task.due_date)
         task.deadline = data.get('deadline', task.deadline)
 
-        # ✅ Update assigned users if provided
+        # ✅ Update assigned users with validation
         if 'assigned_users' in data:
-            user_ids = data['assigned_users']
-            task.assigned_users = User.query.filter(User.userId.in_(user_ids)).all()
-            print(f"👥 Assigned Users Updated: {user_ids}")
+            requested_ids = set(data['assigned_users'])
+
+            # Get valid group member IDs
+            group_member_ids = {member.userId for member in group.members}
+            valid_user_ids = requested_ids & group_member_ids  # intersection
+
+            # Optional: log any invalid users
+            invalid_user_ids = requested_ids - group_member_ids
+            if invalid_user_ids:
+                print(f"⚠️ These user IDs are not part of the group and will be ignored: {invalid_user_ids}")
+
+            # Assign only valid users
+            task.assigned_users = User.query.filter(User.userId.in_(valid_user_ids)).all()
+            print(f"👥 Assigned Users Updated: {valid_user_ids}")
 
         try:
             db.session.commit()
@@ -1363,6 +1377,7 @@ def routes(app):
             return jsonify({"message": f"Failed to remove member: {str(e)}"}), 500
         
 
+ # ============================= 📌 Data API Endpoint ============================= #
 
 
     @analytics_bp.route('/api/data/completion_rate_chart')
@@ -1776,11 +1791,11 @@ def routes(app):
 
 
 
+
+
+    
     @app.route('/groups/<int:group_id>/ai-distribute', methods=['POST'])
     def ai_distribute_tasks(group_id):
-        from collections import defaultdict
-        import json
-
         data = request.get_json()
         tasks = data.get('tasks', [])
         members = data.get('members', [])
@@ -1788,9 +1803,20 @@ def routes(app):
         if not tasks or not members:
             return jsonify({"error": "Missing tasks or members"}), 400
 
-        # Step 1: Calculate total free time per user
+        # Step 1: Validate group and members
+        group = db.session.get(Group, group_id)
+        if not group:
+            return jsonify({"error": "Group not found"}), 404
+
+        current_member_ids = {user.userId for user in group.members}
+        valid_members = [m for m in members if m["id"] in current_member_ids]
+
+        if not valid_members:
+            return jsonify({"error": "No valid members"}), 400
+
+        # Step 2: Calculate free time per user
         user_free_time = {}
-        for member in members:
+        for member in valid_members:
             schedule_entry = UserSchedule.query.filter_by(user_id=member["id"]).first()
             if schedule_entry:
                 try:
@@ -1802,54 +1828,79 @@ def routes(app):
                 total_minutes = 0
             user_free_time[member["id"]] = total_minutes
 
-        total_free_time = sum(user_free_time.values()) or 1  # Avoid division by zero
+        total_free_time = sum(user_free_time.values()) or 1
 
-        # Step 2: Sort users by free time (most to least)
-        sorted_users = sorted(user_free_time.items(), key=lambda x: x[1], reverse=True)
-        user_queue = [user_id for user_id, _ in sorted_users]
+        # Step 3: Build weighted queue based on free time
+        weighted_user_queue = []
+        for user_id, minutes in user_free_time.items():
+            weight = round((minutes / total_free_time) * 100)
+            weighted_user_queue.extend([user_id] * max(1, weight))
+        random.shuffle(weighted_user_queue)
 
+        user_task_counts = defaultdict(int)
         distributed_tasks = []
-        user_index = 0
 
-        for task_data in tasks:
-            task = db.session.get(GroupTask, task_data["id"])
-            if not task:
-                continue
-
-            # 🛑 Skip tasks that are already done
-            if task.status.lower() == "done":
-                continue
-
-            # Assign based on urgency
-            assigned_users = []
+        # Step 4: Sort tasks — urgent first, then by priority, then deadline
+        def task_sort_key(task_data):
+            deadline = task_data.get("deadline")
+            parsed_deadline = None
+            try:
+                parsed_deadline = datetime.strptime(deadline, "%Y-%m-%d %H:%M:%S") if deadline else None
+            except:
+                parsed_deadline = None
 
             is_urgent = (
-                task.priority == 1 and
-                task.deadline and task.deadline <= datetime.utcnow() + timedelta(days=2)
+                task_data.get("priority") == 1 and
+                parsed_deadline and parsed_deadline <= datetime.utcnow() + timedelta(days=2)
             )
 
-            num_assignees = 2 if is_urgent else 1  # 👥 Assign 2 if urgent, otherwise 1
+            return (not is_urgent, task_data.get("priority", 4), parsed_deadline or datetime.max)
 
-            for _ in range(num_assignees):
-                if user_index >= len(user_queue):
-                    user_index = 0  # cycle back if needed
+        tasks = sorted(tasks, key=task_sort_key)
 
-                user_id = user_queue[user_index]
+        # Step 5: Assign tasks
+        for task_data in tasks:
+            task = db.session.get(GroupTask, task_data["id"])
+            if not task or task.status.lower() == "done":
+                continue
+
+            deadline = task.deadline
+            is_urgent = (
+                task.priority == 1 and
+                deadline and deadline <= datetime.utcnow() + timedelta(days=2)
+            )
+
+            # Flexible number of assignees
+            if is_urgent:
+                num_assignees = min(3, len(current_member_ids))
+            elif task.priority == 1:
+                num_assignees = min(2, len(current_member_ids))
+            else:
+                num_assignees = 1
+
+            assigned_users = []
+
+            sorted_queue = sorted(
+                list(set(weighted_user_queue)),
+                key=lambda uid: (user_task_counts[uid], -user_free_time[uid])
+            )
+
+            for user_id in sorted_queue:
                 user = db.session.get(User, user_id)
-
                 if user and user not in task.assigned_users:
                     task.assigned_users.append(user)
                     assigned_users.append(user.userId)
-
-                user_index += 1
+                    user_task_counts[user_id] += 1
+                if len(assigned_users) >= num_assignees:
+                    break
 
             db.session.commit()
             task_dict = task.to_dict()
-            task_dict["new_assigned_users"] = assigned_users  # Debug info
+            task_dict["new_assigned_users"] = assigned_users
             distributed_tasks.append(task_dict)
 
         return jsonify(distributed_tasks), 200
-    
+
 
     
 
