@@ -59,17 +59,19 @@ const AddGroupTask = ({ navigation }) => {
   };
 
   const confirmTimeSelection = () => {
+    const updatedDate = new Date(tempDate);
+    updatedDate.setHours(tempTime.getHours());
+    updatedDate.setMinutes(tempTime.getMinutes());
+    updatedDate.setSeconds(0);
+
     if (dateField === "deadline") {
-      setDeadline(prevDate => {
-        let updatedDate = new Date(prevDate);
-        updatedDate.setHours(tempTime.getHours());
-        updatedDate.setMinutes(tempTime.getMinutes());
-        return updatedDate;
-      });
+      setDeadline(updatedDate);
     }
+
     setShowTimePicker(false);
     setDateField(null);
   };
+
 
   const formatDate = (date) => {
     if (!date) return "Not set";
@@ -132,7 +134,7 @@ const AddGroupTask = ({ navigation }) => {
       const response = await axios.post(`${config.API_URL}/group-tasks`, {
         title,
         description,
-        deadline,
+        deadline: deadline ? new Date(deadline).toISOString() : null,
         priority: priorityNumber,
         status,
         category,

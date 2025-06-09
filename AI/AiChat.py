@@ -14,7 +14,7 @@ headers = {
     "Content-Type": "application/json"
 }
 
-def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urgent_tasks):
+def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urgent_tasks,user_name="there"):
     small_talk_messages = [
         "hi", "hello", "hey", "how are you", "what's up", "yo", "?", "what?", 
         "any advice?", "any tips?", "help?", "motivation?", "can you help?", "some advice?", "anything to suggest?"
@@ -39,65 +39,76 @@ def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urge
     if message.lower().strip() in small_talk_messages:
         # 🌟 Small-talk: simple motivational response
         prompt = f"""
-        You are a smart scheduling and productivity assistant.
-        The user is seeking general advice to stay motivated and productive.
+            You are FocusMate, a smart and encouraging productivity assistant.
 
-        📅 Today is {formatted_date}, and it's the {part_of_day}.
+            Start your message with a friendly greeting like “Hi {user_name}! I’m FocusMate...”
 
-        🎯 Your job:
-        - Give a motivational, positive, and practical advice in 3–5 sentences.
-        - Encourage time management, healthy breaks, and energy balance.
-        - DO NOT mention specific tasks or schedules.
-        """
+                
+            📅 Today is {formatted_date}  
+            🕒 It's currently the {part_of_day}
+
+            The user is looking for motivation to stay productive.
+
+            Respond with a short, supportive message in 3–5 sentences. Begin with a friendly greeting like "Hi! I'm FocusMate..." and offer:
+            - Encouragement to stay focused
+            - One or two helpful strategies (e.g., taking breaks, time-blocking, starting small)
+            - A warm, positive tone
+
+            Do not mention specific tasks, deadlines, or schedules. Keep it general and uplifting.
+            """
+
+
     else:
         # 🧠 Full detailed task-oriented response
         prompt = f"""
-        You are a smart and concise scheduling assistant that helps users manage their tasks and time efficiently. 
-        Today is {formatted_date}, and it's currently the {part_of_day}.
+            You are FocusMate, a smart, supportive productivity assistant that helps users plan their tasks and time efficiently.
 
-        The user is seeking advice about their tasks, productivity, or time management.
-        Your role is to **analyze the user's context** and respond directly with helpful, short advice.
+            📅 Today is {formatted_date} (YYYY-MM-DD)  
+            🕒 Current part of the day: {part_of_day}
 
-        ❗Important:
-        - NEVER repeat or mention the user's question.
-        - Focus only on answering what they need.
-        - Keep your response short: 3–5 sentences.
-        - Use natural, supportive language like a helpful assistant.
+            Write only FocusMate's message. Do not include a user reply or follow-up.
 
-        🧠 Context:
-        - User's weekly schedule:
-        {schedule_note}
+            
 
-        - Personal tasks (incomplete):
-        {personal_summary}
+            🧠 Weekly Schedule:  
+            {schedule_note}
 
-        - Group tasks (incomplete):
-        {group_summary}
+            🗂️ Personal Tasks:  
+            {personal_summary}
 
-        - Urgent tasks (due within 2 days and incomplete):
-        {urgent_summary}
+            👥 Group Tasks:  
+            {group_summary}
 
-        🎯 Behavior rules:
-        - If the user asks about group tasks, list and prioritize group tasks.
-        - If the user asks about personal tasks, list and prioritize personal tasks.
-        - If the user asks about urgent tasks, focus on urgent tasks.
-        - If the user asks generally about productivity, give general advice about time management and rest.
+            ⏰ Urgent Tasks (due within 2 days):  
+            {urgent_summary}
 
-        📌 Do not mention dates or times exactly. Just say "soon", "urgent", etc.
-        """
+            
+
+            Tips for how to reply:
+            - Be supportive, concise, and realistic  
+            - Focus on what matters most today or soon  
+            - If no schedule is available, suggest starting with personal or urgent tasks  
+            - Avoid robotic tone — speak naturally  
+            - Do **not** repeat the user’s question or re-list this data
+            """
+
+
+
 
     # 📡 Send request to Hugging Face
     payload = {
-        "inputs": prompt,
+        "inputs": prompt,  # ✅ just the prompt string
         "parameters": {
             "max_new_tokens": 180,
-            "temperature": 0.75,   
+            "temperature": 0.75,
             "top_k": 50,
             "top_p": 0.95,
             "do_sample": True,
             "return_full_text": False
         }
     }
+
+
 
     response = requests.post(
         f"https://api-inference.huggingface.co/models/{MODEL_ID}",
@@ -109,7 +120,7 @@ def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urge
     if response.status_code == 200:
         try:
             result = response.json()
-            generated = result[0].get('generated_text') or result[0].get('generated_token_strings')
+            generated = result[0].get('generated_text') or result[0].get('text')
             if generated:
                 return generated.strip()
             else:

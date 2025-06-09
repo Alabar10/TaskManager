@@ -9,7 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/AuthContext";
 import Register from "./src/Register/register";
-import ResetFromLink from "./src/ResetEmail/ResetFromLink";
+import EnterCodeScreen from "./src/ResetEmail/EnterCodeScreen";
 import ResetPassword from "./src/ResetEmail/ResetPassword";
 import Settings from "./src/Setting/setting";
 import HomePage from "./src/HomePage/HomePage";
@@ -30,6 +30,9 @@ import * as Linking from 'expo-linking';
 import GroupChatScreen from "./src/GroupChatScreen/GroupChatScreen";
 import CalendarScreen from "./src/Calendar/CalendarScreen";
 import DataScreen from "./src/Data/data"; // Ensure correct path to your data file
+import CustomDrawerContent from './CustomDrawerContent';
+import JiraTaskDetails from './src/Jira/JiraTaskDetails';
+
 // Initialize Navigators
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
@@ -46,41 +49,7 @@ const linking = {
 };
 
 
-// Custom Drawer Content
-const CustomDrawerContent = (props) => {
-  const { logout } = useAuth();
 
-  const handleLogout = () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: () => {
-          logout();
-          props.navigation.reset({
-            index: 0,
-            routes: [{ name: "Login" }],
-          });
-        },
-      },
-    ]);
-  };
-
-  return (
-    <View style={{ flex: 1 }}>
-      <DrawerContentScrollView {...props}>
-        <DrawerItemList {...props} />
-      </DrawerContentScrollView>
-      <View style={styles.logoutContainer}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <MaterialCommunityIcons name="logout" size={20} color="#fff" />
-          <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
 
 // Tab Navigator - Matches your screenshot with Home, Calendar, Schedule, data
 const TabNavigator = () => (
@@ -150,7 +119,7 @@ const App = () => (
             <Stack.Screen name="Register" component={Register} />
             <Stack.Screen name="GroupTasks" component={GroupTasksScreen} />
             <Stack.Screen name="DrawerNavigator" component={DrawerNavigator} />
-            <Stack.Screen name="ResetFromLink" component={ResetFromLink} />
+            <Stack.Screen name="EnterCodeScreen" component={EnterCodeScreen} />
             <Stack.Screen name="ResetPassword" component={ResetPassword} />
             <Stack.Screen name="AddTask" component={AddTask} />
             <Stack.Screen name="TaskDetails" component={TaskDetailsScreen} />
@@ -164,6 +133,7 @@ const App = () => (
             <Stack.Screen name="GroupChat" component={GroupChatScreen} />
             <Stack.Screen name="ChatWithAI" component={ChatWithAI} />
             <Stack.Screen name="data" component={DataScreen} />
+            <Stack.Screen name="JiraTaskDetails" component={JiraTaskDetails} />
 
           </Stack.Navigator>
         </NavigationContainer>

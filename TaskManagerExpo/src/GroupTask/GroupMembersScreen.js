@@ -9,10 +9,10 @@ const GroupMembersScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
   const { groupId } = route.params;
-  
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [groupCreatorId, setGroupCreatorId] = useState(null); // ✅ Fix: Added missing state
+  const [groupCreatorId, setGroupCreatorId] = useState(null); 
 
   useEffect(() => {
     const fetchMembers = async () => {
@@ -21,6 +21,9 @@ const GroupMembersScreen = () => {
 
         // ✅ Fix: Move token declaration here before API calls
         const token = await AsyncStorage.getItem("authToken");
+        const storedUserId = await AsyncStorage.getItem("userId");
+        setCurrentUserId(parseInt(storedUserId));
+
 
         // Fetch group details to get the creator ID
         const groupResponse = await fetch(`${config.API_URL}/groups/${groupId}`, {
@@ -151,40 +154,53 @@ const GroupMembersScreen = () => {
         <FlatList
           data={members}
           keyExtractor={(item) => item.userId.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.memberItem}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <Text style={styles.memberName}>
-                  {item.username}
-                  {item.userId === groupCreatorId && <Text style={styles.adminBadge}> (Admin)</Text>}
-                </Text>
-          
-                {item.userId !== groupCreatorId && (
-                  <TouchableOpacity
-                    style={styles.removeButton}
-                    onPress={() =>
-                      Alert.alert(
-                        "Remove Member",
-                        `Are you sure you want to remove ${item.username}?`,
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Remove",
-                            style: "destructive",
-                            onPress: () => handleRemoveMember(item.userId),
-                          },
-                        ]
-                      )
-                    }
-                  >
-                    <MaterialCommunityIcons name="account-remove" size={24} color="red" />
-                  </TouchableOpacity>
-                )}
+          renderItem={({ item }) => {
+            const isAdmin = item.userId === groupCreatorId;
+            const isSelf = item.userId === currentUserId;
+            const canRemove = (currentUserId === groupCreatorId && !isSelf) || (isSelf && currentUserId !== groupCreatorId);
+
+            return (
+              <View style={styles.memberItem}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={styles.memberName}>
+                    {item.username}
+                    {isAdmin && <Text style={styles.adminBadge}> (Admin)</Text>}
+                  </Text>
+
+                  {canRemove && (
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() =>
+                        Alert.alert(
+                          isSelf ? "Leave Group" : "Remove Member",
+                          isSelf
+                            ? "Are you sure you want to leave this group?"
+                            : `Are you sure you want to remove ${item.username}?`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: isSelf ? "Leave" : "Remove",
+                              style: "destructive",
+                              onPress: () => handleRemoveMember(item.userId),
+                            },
+                          ]
+                        )
+                      }
+                    >
+                      <MaterialCommunityIcons
+                        name={isSelf ? "logout" : "account-remove"}
+                        size={24}
+                        color="red"
+                      />
+                    </TouchableOpacity>
+                  )}
               </View>
               <Text style={styles.memberEmail}>{item.email}</Text>
               <Text style={styles.memberFullName}>{item.fname} {item.lname}</Text>
             </View>
-          )}
+          );
+        }}
+
           
           ListEmptyComponent={<Text style={styles.emptyText}>No members found.</Text>}
         />

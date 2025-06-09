@@ -15,28 +15,32 @@ const RequestReset = ({ navigation }) => {
   const [email, setEmail] = useState('');
 
   const handleRequestReset = async () => {
-    if (!email) {
-      Alert.alert('Missing Email', 'Please enter your email address');
-      return;
+  if (!email.trim()) {
+    Alert.alert('Missing Email', 'Please enter your email address.');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${config.API_URL}/request_reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      Alert.alert('✅ Code Sent', 'Check your email for the 6-digit reset code.');
+      navigation.navigate('EnterCodeScreen', { email });
+    } else {
+      Alert.alert('❌ Error', data.message || 'Failed to send reset code.');
     }
-    try {
-      const response = await fetch(`${config.API_URL}/request_reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        Alert.alert('Success', 'Reset link sent! Check your email.');
-        // Navigate to login or optionally show reset instructions
-        navigation.navigate('Login');
-      } else {
-        Alert.alert('Error', data.message || 'Unable to send reset link');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Network error. Please try again later.');
-    }
-  };
+  } catch (error) {
+    console.error('Reset request failed:', error);
+    Alert.alert('Network Error', 'Please check your connection and try again.');
+  }
+};
+
 
   return (
     <KeyboardAvoidingView

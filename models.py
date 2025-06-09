@@ -16,7 +16,14 @@ class User(db.Model):
     email = db.Column(db.String(50), unique=True, nullable=False)
     fname = db.Column(db.String(50), nullable=True)  # Nullable
     lname = db.Column(db.String(50), nullable=True)  # Nullable
-    firebase_uid = db.Column(db.String(255), nullable=True)  # NEW field
+    
+    jira_email = db.Column(db.String(120))
+    jira_api_token = db.Column(db.String(255))  # You may encrypt it if needed
+    jira_domain = db.Column(db.String(255))
+
+    # 🔐 Add these 2 fields for password reset
+    reset_code = db.Column(db.String(6), nullable=True)
+    reset_code_expiry = db.Column(DateTime, nullable=True)
 
 
 PRIORITY_CHOICES = {
@@ -239,4 +246,28 @@ class GroupMessage(db.Model):
             "file_url": self.file_url,
             "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S") if self.timestamp else None
         }
+    
+
+
+class GroupMessageRead(db.Model):
+    __tablename__ = 'GroupMessageReads'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('Users.userId'), nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey('Groups.id', ondelete='CASCADE'), nullable=False)
+    last_read_message_id = db.Column(db.Integer, db.ForeignKey('GroupMessages.id'), nullable=True)
+    last_read_time = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'group_id', name='uq_user_group_read'),
+    )
+
+    def to_dict(self):
+        return {
+            "user_id": self.user_id,
+            "group_id": self.group_id,
+            "last_read_message_id": self.last_read_message_id,
+            "last_read_time": self.last_read_time.strftime("%Y-%m-%d %H:%M:%S") if self.last_read_time else None,
+        }
+
 

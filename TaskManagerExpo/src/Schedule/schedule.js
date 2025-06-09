@@ -15,54 +15,57 @@ const UserScheduleScreen = () => {
 
   // Fetch the saved schedule
  useEffect(() => {
-    const fetchSchedule = async () => {
-      try {
-          const response = await fetch(`${config.API_URL}/schedule/${userId}`, {
-              method: 'GET',
-              headers: {
-                  Authorization: `Bearer ${token}`,
-              },
-          });
+  if (!userId || !token) return; // Prevent fetching until both are available
 
-          if (!response.ok) {
-              if (response.status === 404) {
-                  console.log("No schedule found, initializing empty schedule.");
-                  return; // If no schedule exists, return silently
-              }
-              throw new Error('Failed to fetch schedule');
-          }
+  const fetchSchedule = async () => {
+    try {
+      const response = await fetch(`${config.API_URL}/schedule/${userId}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-          const data = await response.json();
-          console.log("Fetched data:", data); // Log the data to inspect its structure
-
-        if (data && Object.keys(data).length > 0) {
-          const updatedSchedule = {};
-          daysOfWeek.forEach(day => {
-              if (data[day]) {
-                  if (Array.isArray(data[day])) {
-                      updatedSchedule[day] = data[day].map(slot => slot.replace(/\s+/g, "")); // Normalize spaces
-                  } else if (typeof data[day] === 'string') {
-                      updatedSchedule[day] = data[day]
-                          .split(",")
-                          .map(slot => slot.replace(/\s+/g, "")); // Normalize spaces
-                  } else {
-                      updatedSchedule[day] = [];
-                  }
-              } else {
-                  updatedSchedule[day] = [];
-              }
-          });
-          console.log("🎯 Updated Schedule State:", updatedSchedule);
-          setSchedule(updatedSchedule);
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log("No schedule found, initializing empty schedule.");
+          return;
         }
-      } catch (error) {
-          console.error("Error fetching schedule:", error);
-          setError('Error fetching schedule: ' + error.message);
+        throw new Error('Failed to fetch schedule');
       }
+
+      const data = await response.json();
+      console.log("Fetched data:", data);
+
+      if (data && Object.keys(data).length > 0) {
+        const updatedSchedule = {};
+        daysOfWeek.forEach(day => {
+          if (data[day]) {
+            if (Array.isArray(data[day])) {
+              updatedSchedule[day] = data[day].map(slot => slot.replace(/\s+/g, ""));
+            } else if (typeof data[day] === 'string') {
+              updatedSchedule[day] = data[day]
+                .split(",")
+                .map(slot => slot.replace(/\s+/g, ""));
+            } else {
+              updatedSchedule[day] = [];
+            }
+          } else {
+            updatedSchedule[day] = [];
+          }
+        });
+        console.log("🎯 Updated Schedule State:", updatedSchedule);
+        setSchedule(updatedSchedule);
+      }
+    } catch (error) {
+      console.error("Error fetching schedule:", error);
+      setError('Error fetching schedule: ' + error.message);
+    }
   };
 
-    fetchSchedule();
+  fetchSchedule();
 }, [userId, token]);
+
 
 
   // Toggle selected time slot

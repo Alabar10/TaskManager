@@ -4,6 +4,7 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import config from '../config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PieChart } from 'react-native-chart-kit';
+import { RefreshControl } from 'react-native';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -37,41 +38,53 @@ const DataScreen = () => {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState(null);
   const [onTimeStats, setOnTimeStats] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchData = async (id) => {
+    try {
+      const monthlyRes = await fetch(`${config.API_URL}/api/data/monthly_stats/${id}`);
+      const monthlyJson = await monthlyRes.json();
+      setMonthlyData(monthlyJson);
+
+      const timeTakenRes = await fetch(`${config.API_URL}/api/data/time_taken_stats/${id}`);
+      const timeTakenJson = await timeTakenRes.json();
+      setTimeTakenData(timeTakenJson);
+
+      const onTimeRes = await fetch(`${config.API_URL}/api/data/on_time_stats/${id}`);
+      const onTimeJson = await onTimeRes.json();
+      setOnTimeStats(onTimeJson);
+    } catch (error) {
+      console.error("❌ Failed to fetch data:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
-      const id = await AsyncStorage.getItem("userId");
-      setUserId(id);
+      try {
+        const id = await AsyncStorage.getItem("userId");
+        if (id) {
+          setUserId(id);
+          setLoading(true);
+          await fetchData(id);
+        }
+      } catch (err) {
+        console.error("❌ Failed to load user ID:", err);
+        setLoading(false);
+      }
     };
     init();
   }, []);
 
-  useEffect(() => {
+  const handleRefresh = async () => {
     if (!userId) return;
+    setRefreshing(true);
+    await fetchData(userId);
+  };
 
-    const fetchData = async () => {
-      try {
-        const monthlyRes = await fetch(`${config.API_URL}/api/data/monthly_stats/${userId}`);
-        const monthlyJson = await monthlyRes.json();
-        setMonthlyData(monthlyJson);
 
-        const timeTakenRes = await fetch(`${config.API_URL}/api/data/time_taken_stats/${userId}`);
-        const timeTakenJson = await timeTakenRes.json();
-        setTimeTakenData(timeTakenJson);
-
-        const onTimeRes = await fetch(`${config.API_URL}/api/data/on_time_stats/${userId}`);
-        const onTimeJson = await onTimeRes.json();
-        setOnTimeStats(onTimeJson);
-
-      } catch (error) {
-        console.error("❌ Failed to fetch data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [userId]);
 
   return (
     !userId ? (
@@ -79,7 +92,9 @@ const DataScreen = () => {
         <ActivityIndicator size="large" color="#3498db" />
       </View>
     ) : (
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} refreshControl={
+    <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+  }>
         <View style={styles.header}>
           <Text style={styles.headerText}>Your Productivity Analytics</Text>
         </View>

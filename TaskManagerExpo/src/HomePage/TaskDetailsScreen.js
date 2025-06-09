@@ -5,6 +5,7 @@ import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import axios from 'axios';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import config from '../config'; // Adjust the path based on your file structure
+import { useAuth } from '../AuthContext';
 
 const priorityMap = {
   "Important and Urgent": 1,
@@ -23,9 +24,24 @@ const reversePriorityMap = {
 
 
 const getPriorityText = (priorityValue) => {
-  if (!priorityValue || typeof priorityValue !== "number") return "Select Priority";
-  return reversePriorityMap[priorityValue] || "Select Priority";
+  if (!priorityValue) return "Select Priority";
+
+  // Normalize to match regardless of case
+  if (typeof priorityValue === "string") {
+    const match = Object.keys(priorityMap).find(
+      key => key.toLowerCase() === priorityValue.toLowerCase()
+    );
+    return match || "Select Priority";
+  }
+
+  if (typeof priorityValue === "number") {
+    return reversePriorityMap[priorityValue] || "Select Priority";
+  }
+
+  return "Select Priority";
 };
+
+
 
 const TaskDetailsScreen = ({ route, navigation }) => {
   const initialTask = route.params?.task ?? {};
@@ -53,7 +69,7 @@ const TaskDetailsScreen = ({ route, navigation }) => {
   const categoryOptions = ['reading', 'coding', 'writing', 'exercising', 'General'];
   const [category, setCategory] = useState(initialTask.category || "General");
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  
+  const { token } = useAuth(); 
 
   
 
@@ -90,6 +106,8 @@ const TaskDetailsScreen = ({ route, navigation }) => {
             console.log("Task details fetched successfully:", taskData);
             setTask(taskData);
             setDeadline(taskData.deadline ? new Date(taskData.deadline) : new Date());
+            setPriority(getPriorityText(taskData.priority)); 
+
         }
     } catch (error) {
         console.error("Error fetching task details:", error);
@@ -179,31 +197,37 @@ const handleSave = async () => {
   };
 
   const handleDelete = async () => {
-    if (!task?.id) {
-        Alert.alert("Error", "Task ID is missing. Please try again.");
-        return;
+  if (!task?.id) {
+    Alert.alert("Error", "Task ID is missing. Please try again.");
+    return;
+  }
+
+  const endpoint = task.group_id
+    ? `${config.API_URL}/groups/${task.group_id}/tasks/${task.id}`  // ✅ Group task delete
+    : `${config.API_URL}/tasks/${task.id}`;                         // ✅ Personal task delete
+
+  console.log("Attempting DELETE request to:", endpoint);
+
+  try {
+    const response = await axios.delete(endpoint, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`, // Make sure token comes from useAuth()
+      },
+    });
+
+    if (response.status === 200) {
+      Alert.alert("Success", "Task deleted successfully!");
+      navigation.goBack();
+    } else {
+      Alert.alert("Error", "Failed to delete task.");
     }
+  } catch (error) {
+    console.error("Error deleting task:", error);
+    Alert.alert("Error", error.response?.data?.message || "Failed to delete task.");
+  }
+};
 
-    const endpoint = `${config.API_URL}/tasks/${task.id}`; // ✅ Delete all tasks through /tasks/{taskId}
-
-    console.log("Attempting DELETE request to:", endpoint);
-
-    try {
-        const response = await axios.delete(endpoint, {
-            headers: { "Content-Type": "application/json" }
-        });
-
-        if (response.status === 200) {
-            Alert.alert("Success", "Task deleted successfully!");
-            navigation.goBack();
-        } else {
-            Alert.alert("Error", "Failed to delete task.");
-        }
-    } catch (error) {
-        console.error("Error deleting task:", error);
-        Alert.alert("Error", error.response?.data?.message || "Failed to delete task.");
-    }
-  };
 
 
 

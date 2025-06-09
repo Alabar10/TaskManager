@@ -18,6 +18,7 @@ const GroupTasksScreen = () => {
   const [isCreator, setIsCreator] = useState(false); // Tracks if the current user is the group creator
   const [refreshing, setRefreshing] = useState(false);
   const [memberMap, setMemberMap] = useState({});
+  const [hasNewMessages, setHasNewMessages] = useState(false);
 
   const fetchGroupData = async () => {
     try {
@@ -63,12 +64,48 @@ const GroupTasksScreen = () => {
     fetchGroupData();
   };
 
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchGroupData(); // Fetch data when screen is focused
-    }, [groupId])
-  );
+useFocusEffect(
+  React.useCallback(() => {
+    fetchGroupData();
+    checkNewMessages();
+  }, [groupId])
+);
+
+useFocusEffect(
+  React.useCallback(() => {
+    // Notify backend that messages are seen
+    const markMessagesAsRead = async () => {
+      const userId = await AsyncStorage.getItem("userId");
+      await fetch(`${config.API_URL}/groups/${groupId}/chat/mark_read/${userId}`, {
+        method: "POST"
+      });
+    };
+    markMessagesAsRead();
+  }, [])
+);
+
+
+
   
+const checkNewMessages = async () => {
+  try {
+    const userId = await AsyncStorage.getItem("userId");
+    const res = await fetch(`${config.API_URL}/groups/${groupId}/chat/unread/${userId}`);
+    const data = await res.json();
+    setHasNewMessages(data.hasNewMessages); // Backend should return a boolean
+  } catch (err) {
+    console.warn("Could not check new messages:", err);
+    setHasNewMessages(false);
+  }
+};
+useEffect(() => {
+  const interval = setInterval(() => {
+    checkNewMessages();
+  }, 10000); // 🔁 Every 10 seconds
+
+  return () => clearInterval(interval); // 🔁 Cleanup on unmount
+}, [groupId]);
+
 
 
   const handleDistributeTasks = async () => {
@@ -318,7 +355,9 @@ const GroupTasksScreen = () => {
       onPress={() => navigation.navigate("GroupChat", { groupId, groupName })}
     >
       <Text style={styles.chatButtonText}>💬</Text>
+      {hasNewMessages && <View style={styles.notificationDot} />}
     </TouchableOpacity>
+
 
     </LinearGradient>
   );
@@ -516,6 +555,18 @@ chatButtonText: {
   fontSize: 18,
   fontWeight: "bold",
 },
+notificationDot: {
+  position: "absolute",
+  top: -2,
+  right: -2,
+  width: 12,
+  height: 12,
+  borderRadius: 6,
+  backgroundColor: "red",
+  borderWidth: 1,
+  borderColor: "#fff",
+},
+
 
 });
 

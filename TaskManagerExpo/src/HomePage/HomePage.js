@@ -72,7 +72,6 @@ const HomePage = () => {
           type: "group",
         }));
 
-        // ✅ Structure data into sections
         setItems([
           { title: "Personal Tasks", data: tasksData || [] },
           { title: "Group Tasks", data: groupsData || [] }
@@ -90,6 +89,29 @@ const HomePage = () => {
         // Set items as a flat array for the "Personal" tab
         setItems(tasksData || []);
       }
+       else if (selectedTab === "Jira") {
+          try {
+            const token = await AsyncStorage.getItem("userToken");
+            const res = await axios.get(`${config.API_URL}/jira/issues`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+
+            const jiraTasks = res.data.map((issue) => ({
+              ...issue,
+              type: "jira",
+            }));
+            setItems(jiraTasks);
+          } catch (err) {
+            if (err.response?.status === 401) {
+              console.log("ℹ️ User not connected to Jira. Skipping fetch.");
+            } else {
+              console.error("❌ Failed to fetch Jira issues:", err);
+            }
+            setItems([]);
+          }
+        }
 
       console.log("Fetched Items:", [...tasksData, ...groupsData]);
     } catch (error) {
@@ -121,18 +143,22 @@ const HomePage = () => {
       <TouchableOpacity
         style={styles.taskItem}
         onPress={() => {
-          if (item.type === "group") {
-            navigation.navigate("GroupTasks", {
-              groupId: item.id,
-              groupName: item.name,
-            });
-          } else {
-            navigation.navigate("TaskDetails", { task: item });
-          }
-        }}
+        if (item.type === "group") {
+          navigation.navigate("GroupTasks", {
+            groupId: item.id,
+            groupName: item.name,
+          });
+        } else if (item.type === "jira") {
+          navigation.navigate("JiraTaskDetails", { task: item });
+        } else {
+          navigation.navigate("TaskDetails", { task: item });
+        }
+      }}
       >
         <View style={styles.taskRow}>
-          <Text style={styles.taskTitle}>{item.name || item.title}</Text>
+          <Text style={styles.taskTitle}>
+            {item.name || item.title} {item.type === "jira" }
+          </Text>
 
           {/* ✅ Ensure status exists before rendering the icon */}
           {item.type === "task" && item.status && statusIcons[item.status] && (
@@ -143,10 +169,20 @@ const HomePage = () => {
         </View>
 
         {item.type === "group" ? (
-          <Text style={styles.groupDetails}>Members: {item.members?.length || 0}</Text>
-        ) : (
-          <Text style={styles.taskDetails}>Created at: {item.due_date || "No Due Date"}</Text>
-        )}
+        <Text style={styles.groupDetails}>
+          Members: {item.members?.length || 0}
+        </Text>
+      ) : item.type === "jira" ? (
+        <Text style={styles.taskDetails}>
+          Status: {item.status || "Unknown"}
+        </Text>
+      ) : (
+        <Text style={styles.taskDetails}>
+          Created at: {item.due_date || "No Due Date"}
+        </Text>
+      )}
+
+        
       </TouchableOpacity>
     );
   };
@@ -197,6 +233,21 @@ const HomePage = () => {
             Group
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+        style={[
+          styles.tab,
+          selectedTab === "Jira" && styles.activeTab,
+          isTabPressed === "Jira" && styles.tabPressed,
+        ]}
+        onPress={() => setSelectedTab("Jira")}
+        onPressIn={() => setIsTabPressed("Jira")}
+        onPressOut={() => setIsTabPressed(null)}
+      >
+        <Text style={[styles.tabText, selectedTab === "Jira" && styles.activeTabText]}>
+          Jira
+        </Text>
+      </TouchableOpacity>
+
       </View>
 
       {/* Loading Indicator */}

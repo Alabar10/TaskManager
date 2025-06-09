@@ -32,6 +32,8 @@ from sqlalchemy.sql import func
 from collections import defaultdict
 import random
 from datetime import datetime, timedelta
+from random import randint
+from flask import current_app
 
 
 
@@ -258,7 +260,11 @@ def routes(app):
                     "username": user.username,
                     "email": user.email,
                     "fname": user.fname,
-                    "lname": user.lname
+                    "lname": user.lname,
+
+                    "jira_email": user.jira_email,
+                    "jira_api_token": user.jira_api_token,
+                    "jira_domain": user.jira_domain,
                 
                 }), 200
             else:
@@ -324,24 +330,22 @@ def routes(app):
             return jsonify({"error": f"Failed to delete task: {str(e)}"}), 500
 
 
-    @app.route('/group-tasks/delete/<int:task_id>', methods=['DELETE'])
-    def delete_group_task(task_id):
-        task = GroupTask.query.get(task_id)
+    @app.route('/groups/<int:group_id>/tasks/<int:task_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_group_task_by_group(group_id, task_id):
+        task = GroupTask.query.filter_by(id=task_id, group_id=group_id).first()
         
         if not task:
             return jsonify({"error": "Group Task not found"}), 404
 
         try:
-            # Remove any user associations for the task before deleting it
             db.session.execute(task_user_association.delete().where(task_user_association.c.task_id == task_id))
-
             db.session.delete(task)
             db.session.commit()
             return jsonify({"message": "Group Task deleted successfully"}), 200
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": f"Failed to delete group task: {str(e)}"}), 500
-
 
 
 
@@ -437,7 +441,8 @@ def routes(app):
             print(f"Fetching tasks for user ID: {user_id}")  # Debugging log
             tasks = PersonalTask.query.filter_by(user_id=user_id).all()
             if not tasks:
-                return jsonify({"message": "No tasks found for this user."}), 404
+                return jsonify([]), 200  # Return an empty list instead of an error
+
             task_list = [task.to_dict() for task in tasks]
             return jsonify(task_list), 200
         except Exception as e:
@@ -677,35 +682,41 @@ def routes(app):
     def create_group_task():
         data = request.get_json()
 
-        required_fields = ["title", "description", "group_id", "priority", "status","category"]
-        missing_fields = [field for field in required_fields if field not in data or data[field] is None or data[field] == '']
+        required_fields = ["title", "description", "group_id", "priority", "status", "category"]
+        missing_fields = [field for field in required_fields if not data.get(field)]
 
         if missing_fields:
-            app.logger.warning("❌ Missing fields: %s", missing_fields)
             return jsonify({"message": "Missing required fields", "missing": missing_fields}), 400
 
-        title = data.get('title')
-        description = data.get('description')
-        group_id = data.get('group_id')
-        priority = data.get('priority')
-        status = data.get('status')
-        category=data.get('category')
+        title = data['title']
+        description = data['description']
+        group_id = data['group_id']
+        priority = data['priority']
+        status = data['status']
+        category = data['category']
         created_at = datetime.utcnow()
 
         due_date = data.get('due_date', created_at)
-        if due_date and isinstance(due_date, str):
+        if isinstance(due_date, str):
             try:
                 due_date = datetime.strptime(due_date, "%Y-%m-%dT%H:%M:%S")
             except ValueError:
-                return jsonify({"message": "Invalid date format. Expected ISO 8601 (YYYY-MM-DDTHH:MM:SS)"}), 400
+                return jsonify({"message": "Invalid due_date format"}), 400
 
-        print(f"📩 Creating new group task with data: {data}")  # Log the incoming data
+        deadline_str = data.get('deadline')
+        deadline = None
+        if deadline_str:
+            try:
+                deadline = datetime.fromisoformat(deadline_str.replace("Z", ""))
+            except ValueError:
+                return jsonify({"message": "Invalid deadline format"}), 400
+
         new_task = GroupTask(
-
             title=title,
             description=description,
             group_id=group_id,
             due_date=due_date,
+            deadline=deadline,  
             priority=priority,
             status=status,
             category=category
@@ -714,9 +725,7 @@ def routes(app):
         try:
             db.session.add(new_task)
             db.session.commit()
-            print(f"✅ Group task created successfully: {new_task.to_dict()}")  # Log success
             return jsonify({"message": "Group task created successfully", "task": new_task.to_dict()}), 201
-
         except Exception as e:
             db.session.rollback()
             return jsonify({"message": "Failed to create task", "error": str(e)}), 500
@@ -837,40 +846,73 @@ def routes(app):
         
 
 
+  
+
     @app.route('/tasks/dates', methods=['GET'])
+    @jwt_required()
     def get_tasks_by_dates():
-        user_id = request.args.get('user_id')
+        current_user_id = get_jwt_identity()
+        requested_user_id = request.args.get('user_id')
+
+        # Always enforce that requested_user_id matches current_user_id
+        if not requested_user_id or str(requested_user_id) != str(current_user_id):
+            return jsonify({"error": "Unauthorized access"}), 403
+
+        # If no date range provided, return all tasks for user
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
 
-        # Validate user_id
-        if not user_id:
-            return jsonify({"error": "User ID is required"}), 400
+        base_personal_query = PersonalTask.query.filter(
+            PersonalTask.user_id == current_user_id
+        )
+        
+        base_group_query = db.session.query(GroupTask).join(
+            group_user_association,
+            GroupTask.group_id == group_user_association.c.group_id
+        ).filter(
+            group_user_association.c.user_id == current_user_id
+        )
 
-        # Validate date format
-        try:
-            start = datetime.strptime(start_date, '%Y-%m-%d')
-            end = datetime.strptime(end_date, '%Y-%m-%d')
-            if start > end:
-                return jsonify({"error": "Start date must be before end date"}), 400
-        except ValueError:
-            return jsonify({"error": "Invalid date format, use YYYY-MM-DD"}), 400
+        # Apply date filtering if parameters exist
+        if start_date and end_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d')
+                end = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                
+                base_personal_query = base_personal_query.filter(
+                    PersonalTask.due_date >= start,
+                    PersonalTask.due_date <= end
+                )
+                
+                base_group_query = base_group_query.filter(
+                    GroupTask.due_date >= start,
+                    GroupTask.due_date <= end
+                )
+            except (TypeError, ValueError):
+                current_app.logger.error(f"Invalid date format. Start: {start_date}, End: {end_date}")
+                return jsonify({"error": "Invalid date format"}), 400
 
-        try:
-            # Fetch tasks from the database
-            tasks = PersonalTask.query.filter(
-                PersonalTask.user_id == user_id,
-                PersonalTask.due_date >= start,
-                PersonalTask.due_date <= end
-            ).all()
+        # Get all matching tasks
+        personal_tasks = base_personal_query.all()
+        group_tasks = base_group_query.all()
 
-            # Convert tasks to dictionary format using the model's to_dict method
-            task_list = [task.to_dict() for task in tasks] if tasks else []
-            return jsonify(task_list), 200
-        except SQLAlchemyError as e:
-            print(f"Database error occurred: {e}")
-            return jsonify({"error": "Failed to fetch tasks from the database"}), 500  
+        # Format results
+        result = []
+        
+        # Personal tasks
+        for task in personal_tasks:
+            task_dict = task.to_dict()
+            task_dict['task_type'] = 'personal'
+            result.append(task_dict)
+        
+        # Group tasks
+        for task in group_tasks:
+            task_dict = task.to_dict()
+            task_dict['task_type'] = 'group'
+            task_dict['group_name'] = task.group.name if task.group else None
+            result.append(task_dict)
 
+        return jsonify(result), 200
 
     @app.route('/schedule/<int:user_id>', methods=['GET'])
     def get_user_schedule(user_id):
@@ -1058,29 +1100,7 @@ def routes(app):
             return jsonify({"error": str(e)}), 500
 
 
-    @app.route('/reset_password', methods=['POST'])
-    def reset_password():
-        data = request.get_json()
-        email = data.get('email')
-        new_password = data.get('password')
-
-        if not email or not new_password:
-            return jsonify({'message': 'Missing email or password'}), 400
-
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify({'message': 'User not found'}), 404
-
-        hashed_password = generate_password_hash(new_password, method='pbkdf2:sha256')
-        user.password = hashed_password
-
-        db.session.commit()
-
-        return jsonify({'message': 'Password reset successful'}), 200
-
     
-
-
     @app.route('/request_reset', methods=['POST'])
     def request_reset():
         data = request.get_json()
@@ -1089,127 +1109,95 @@ def routes(app):
         if not email:
             return jsonify({"message": "Email is required"}), 400
 
-        # Check if user exists
         user = User.query.filter_by(email=email).first()
         if not user:
             return jsonify({"message": "User not found"}), 404
 
-        # Generate secure token
-        serializer = URLSafeTimedSerializer(app.secret_key)
-        token = serializer.dumps(email, salt='reset-password-salt')
-        safe_token = quote(token)  # URL-encode token for safety
+        # ✅ Generate 6-digit code and set expiry in UTC
+        reset_code = str(randint(100000, 999999))
+        expiry_time_utc = datetime.utcnow() + timedelta(minutes=10)
 
-        # ✅ Use HTTPS link instead of myapp:// directly
-        reset_url = f"http://192.168.1.42:5000/reset?token={safe_token}"
-
-        print(f"📨 Reset URL to send: {reset_url}")
+        # Save to user
+        user.reset_code = reset_code
+        user.reset_code_expiry = expiry_time_utc
+        db.session.commit()
 
         try:
-            print(f"📧 Sending email to {email}...")
+            # Setup and send the email
             msg = Message(
-                "Password Reset Request",
-                sender=os.getenv('MAIL_USERNAME'),
-                recipients=[email]
+                subject="Your TaskManager Reset Code",
+                sender=os.getenv("MAIL_USERNAME"),
+                recipients=[email],
             )
-
-            msg.body = f"Click the link to reset your password:\n\n{reset_url}"
-
+            msg.body = f"Your password reset code is: {reset_code}\nIt will expire in 10 minutes."
             msg.html = f"""
-            <p>Click the button below to reset your password:</p>
-            <table role="presentation" cellspacing="0" cellpadding="0">
-            <tr>
-                <td align="center" bgcolor="#4CAF50" style="border-radius: 5px;">
-                <a href="{reset_url}" target="_blank" style="
-                    display: inline-block;
-                    padding: 12px 24px;
-                    font-family: Helvetica, Arial, sans-serif;
-                    font-size: 16px;
-                    color: #ffffff;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    font-weight: bold;
-                ">
-                    Reset Password
-                </a>
-                </td>
-            </tr>
-            </table>
-
-            <p style="margin-top: 20px;">
-            Or open this link manually:<br>
-            <a href="{reset_url}">{reset_url}</a>
-            </p>
+                <p>Hi {user.fname or 'there'},</p>
+                <p>Use the code below to reset your password. It will expire in 10 minutes.</p>
+                <h2 style="font-size: 28px; color: #4CAF50;">{reset_code}</h2>
+                <p>If you didn’t request this, you can ignore this email.</p>
             """
-
             mail.send(msg)
-            print("✅ Email sent successfully!")
-            return jsonify({"message": "Reset link sent"}), 200
+
+            # Optional: Debug log both UTC and Israel time
+            israel_time = expiry_time_utc + timedelta(hours=3)
+            print(f"✅ Sent code {reset_code} to {email}")
+            print(f"   Expiry (UTC):     {expiry_time_utc.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   Expiry (Israel):  {israel_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+            return jsonify({"message": "Reset code sent"}), 200
 
         except Exception as e:
-            print(f"❌ Email send failed: {e}")
-            return jsonify({"message": f"Failed to send email: {str(e)}"}), 500
+            print(f"❌ Failed to send reset email: {e}")
+            return jsonify({"message": f"Error sending email: {str(e)}"}), 500
 
-    @app.route('/reset')
-    def redirect_to_mobile_app():
-        token = request.args.get('token')
-        if not token:
-            return "Invalid or missing token", 400
-
-        return render_template_string(f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <title>Redirecting...</title>
-        <meta http-equiv="refresh" content="0; url=myapp://reset?token={token}" />
-        <style>
-            body {{
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 100px;
-            }}
-            a {{
-            display: inline-block;
-            margin-top: 20px;
-            background: #4CAF50;
-            color: white;
-            padding: 12px 20px;
-            text-decoration: none;
-            border-radius: 5px;
-            }}
-        </style>
-        </head>
-        <body>
-        <h2>Redirecting to the app...</h2>
-        <p>If nothing happens, click the button below:</p>
-        <a href="myapp://reset?token={token}">Open in App</a>
-        </body>
-        </html>
-        """)
-
-    @app.route('/reset_password_token', methods=['POST'])
-    def reset_password_token():
+    @app.route('/verify_reset_code', methods=['POST'])
+    def verify_reset_code():
         data = request.get_json()
-        token = data.get('token')
+        email = data.get('email')
+        code = data.get('code')
+
+        if not email or not code:
+            return jsonify({"message": "Email and code are required"}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+
+        if user.reset_code != code:
+            return jsonify({"message": "Incorrect code"}), 400
+
+        if not user.reset_code_expiry or user.reset_code_expiry < datetime.utcnow():
+            return jsonify({"message": "Code has expired"}), 400
+
+        return jsonify({"message": "Code verified"}), 200
+
+
+
+    @app.route('/reset_password', methods=['POST'])
+    def reset_password():
+        data = request.get_json()
+        email = data.get('email')
         new_password = data.get('password')
 
-        if not token or not new_password:
-            return jsonify({"message": "Token and password are required"}), 400
-
-        serializer = URLSafeTimedSerializer(app.secret_key)
-
-        try:
-            email = serializer.loads(token, salt='reset-password-salt', max_age=3600)  # 1 hour validity
-        except Exception as e:
-            return jsonify({"message": "Invalid or expired token"}), 400
+        if not email or not new_password:
+            return jsonify({"message": "Missing email or password"}), 400
 
         user = User.query.filter_by(email=email).first()
         if not user:
             return jsonify({"message": "User not found"}), 404
 
-        user.password = generate_password_hash(new_password)
-        db.session.commit()
-        return jsonify({"message": "Password has been reset successfully"}), 200
+        try:
+            # Use pbkdf2 instead of default (scrypt not available)
+            user.password = generate_password_hash(new_password, method='pbkdf2:sha256')
+            user.reset_code = None
+            user.reset_code_expiry = None
+            db.session.commit()
 
+            return jsonify({"message": "Password reset successful"}), 200
+
+        except Exception as e:
+            print(f"❌ Password reset failed: {e}")
+            return jsonify({"message": "Internal server error"}), 500
 
     @app.route('/group-tasks/user/<int:user_id>', methods=['GET'])
     def get_group_tasks_for_user(user_id):
@@ -1500,6 +1488,68 @@ def routes(app):
 
         except Exception as e:
             return jsonify({"error": f"Failed to calculate on-time stats: {str(e)}"}), 500
+        
+    from flask import jsonify, request
+    from sqlalchemy import func
+    from datetime import datetime
+    from models import GroupMessageRead, GroupMessage  # Import your models
+
+    # ✅ Check if user has unread messages in a group
+    @app.route("/groups/<int:group_id>/chat/unread/<int:user_id>")
+    def check_unread(group_id, user_id):
+        last_read = (
+            db.session.query(GroupMessageRead)
+            .filter_by(user_id=user_id, group_id=group_id)
+            .first()
+        )
+
+        last_read_time = last_read.last_read_time if last_read else None
+
+        latest_msg_time = (
+            db.session.query(func.max(GroupMessage.timestamp))
+            .filter_by(group_id=group_id)
+            .scalar()
+        )
+
+        has_new = latest_msg_time and (not last_read_time or latest_msg_time > last_read_time)
+
+        return jsonify({
+            "hasNewMessages": has_new,
+            "latestMessageTime": latest_msg_time.strftime("%Y-%m-%d %H:%M:%S") if latest_msg_time else None,
+            "lastReadTime": last_read_time.strftime("%Y-%m-%d %H:%M:%S") if last_read_time else None
+        })
+
+
+    # ✅ Mark latest message as read
+    @app.route("/groups/<int:group_id>/chat/mark_read/<int:user_id>", methods=["POST"])
+    def mark_chat_read(group_id, user_id):
+        now = datetime.utcnow()
+
+        read_entry = (
+            db.session.query(GroupMessageRead)
+            .filter_by(user_id=user_id, group_id=group_id)
+            .first()
+        )
+
+        if read_entry:
+            read_entry.last_read_time = now
+        else:
+            read_entry = GroupMessageRead(
+                user_id=user_id,
+                group_id=group_id,
+                last_read_time=now
+            )
+            db.session.add(read_entry)
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "Marked as read",
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S")
+        })
+
+
+        
 
 
  # ============================= 📌 AI Prediction API Endpoint ============================= #
@@ -1902,52 +1952,6 @@ def routes(app):
         return jsonify(distributed_tasks), 200
 
 
-    
-
-
-
-
- # ============================= 📌 Jira API Endpoint ============================= #
-
-    jira_bp = Blueprint("jira", __name__)
-
-    @jira_bp.route("/jira/issues", methods=["GET"])
-    def get_jira_issues():
-        email = os.getenv("JIRA_EMAIL")
-        api_token = os.getenv("JIRA_API_TOKEN")
-        domain = os.getenv("JIRA_DOMAIN")
-
-        url = f"https://{domain}/rest/api/3/search"
-        auth = (email, api_token)
-
-        params = {
-            "jql": 'assignee=currentUser() AND statusCategory != Done ORDER BY due ASC',
-            "maxResults": 10,
-            "fields": "summary,duedate,status"
-        }
-
-        headers = {
-            "Accept": "application/json"
-        }
-
-        response = requests.get(url, headers=headers, params=params, auth=auth)
-
-        if response.status_code == 200:
-            issues = response.json().get("issues", [])
-            formatted_issues = [
-                {
-                    "id": issue["id"],
-                    "title": issue["fields"]["summary"],
-                    "deadline": issue["fields"].get("duedate"),
-                    "status": issue["fields"]["status"]["name"]
-                }
-                for issue in issues
-            ]
-            return jsonify(formatted_issues)
-        else:
-            return jsonify({"error": response.text}), response.status_code
-
-  
 
 
 # ==================================================== Main ========================================================== #
