@@ -5,7 +5,7 @@ const IOS_CLIENT_ID = '499894714296-ulggt45kbk57hgog8fek8u0aa7qgll3.apps.googleu
 // Use EXPO_CLIENT_ID also as GOOGLE_CLIENT_ID for web (Expo Go)
 const GOOGLE_CLIENT_ID = EXPO_CLIENT_ID;
 
-const API_URL = 'http://192.168.1.42:5050/'; // Your Flask backend
+const API_URL = 'http://192.168.1.43:5050/'; 
 
 export default {
   EXPO_CLIENT_ID,

@@ -130,49 +130,57 @@ const AddTask = ({ navigation }) => {
 
   const [estimatedCompletion, setEstimatedCompletion] = useState(null); // Added missing state
 
-  const fetchEstimatedTime = (selectedPriority, selectedCategory, estimatedTime, startTime, deadline) => {
-    setEstimatedTime(null);
-    setEstimatedCompletion(null);
-  
-    if (!selectedPriority || !selectedCategory || !startTime || !deadline) {
-      Alert.alert("Error", "Please select priority, category, start time, and deadline before fetching the estimated time.");
-      return;
-    }
-  
-    const priorityNumber = priorityMap[selectedPriority];
-  
-    const startTimeISO = new Date(startTime).toISOString();  // Correctly defined here
-    const deadlineISO = new Date(deadline).toISOString();    // Correctly defined here
-  
-    const requestData = {
-      category: selectedCategory,
-      priority: priorityNumber,
-      estimated_time: estimatedTime && estimatedTime > 0 ? estimatedTime : 60, // Ensure default to 60 minutes if zero or null
-      start_time: startTimeISO,    // ✅ properly defined above
-      deadline: deadlineISO,       // ✅ properly use deadlineISO here
-    };
-  
-    console.log("📤 Fetching Estimated Time with Data:", requestData);
-  
-    axios
-      .post(`${config.API_URL}/predict`, requestData)
-      .then((response) => {
-        console.log("🔍 API Response:", response.data);
-        if (response.data.predicted_time_minutes) {
-          setEstimatedTime(response.data.predicted_time_minutes);
-  
-          const predictedCompletion = new Date(
-            new Date(startTime).getTime() + response.data.predicted_time_minutes * 60000
-          );
-          setEstimatedCompletion(predictedCompletion.toLocaleString());
-          console.log(`📅 Estimated Completion: ${predictedCompletion}`);
-        }
-      })
-      .catch((error) => {
-        console.error(error);
-        Alert.alert("Error", error.response?.data?.error || "Prediction failed.");
-      });
+  const fetchEstimatedTime = async (selectedPriority, selectedCategory, estimatedTime, startTime, deadline) => {
+  setEstimatedTime(null);
+  setEstimatedCompletion(null);
+
+  if (!selectedPriority || !selectedCategory || !startTime || !deadline) {
+    Alert.alert("Error", "Please select priority, category, start time, and deadline before fetching the estimated time.");
+    return;
+  }
+
+  const priorityNumber = priorityMap[selectedPriority];
+  const startTimeISO = new Date(startTime).toISOString();
+  const deadlineISO = new Date(deadline).toISOString();
+
+  // 🔧 Get userId from storage
+  const userId = await AsyncStorage.getItem('userId');
+  if (!userId) {
+    Alert.alert("Error", "User not logged in.");
+    return;
+  }
+
+  const requestData = {
+    category: selectedCategory,
+    priority: priorityNumber,
+    estimated_time: estimatedTime && estimatedTime > 0 ? estimatedTime : 60,
+    start_time: startTimeISO,
+    deadline: deadlineISO,
+    user_id: parseInt(userId), // ✅ ADD THIS LINE
   };
+
+  console.log("📤 Fetching Estimated Time with Data:", requestData);
+
+  axios
+    .post(`${config.API_URL}/predict`, requestData)
+    .then((response) => {
+      console.log("🔍 API Response:", response.data);
+      if (response.data.predicted_time_minutes) {
+        setEstimatedTime(response.data.predicted_time_minutes);
+
+        const predictedCompletion = new Date(
+          new Date(startTime).getTime() + response.data.predicted_time_minutes * 60000
+        );
+        setEstimatedCompletion(predictedCompletion.toLocaleString());
+        console.log(`📅 Estimated Completion: ${predictedCompletion}`);
+      }
+    })
+    .catch((error) => {
+      console.error(error);
+      Alert.alert("Error", error.response?.data?.error || "Prediction failed.");
+    });
+};
+
   
   
 

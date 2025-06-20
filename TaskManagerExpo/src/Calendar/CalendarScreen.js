@@ -37,13 +37,13 @@ const CalendarScreen = () => {
   );
 
   // Fetch tasks (same as your existing code)
-  useEffect(() => {
-    if (!userId || !token || userGroups.length === 0) return;
-
+useFocusEffect(
+  useCallback(() => {
+    if (!userId || !token) return;
         const fetchTasks = async () => {
       try {
         // Fetch Personal Tasks
-        const personalResponse = await fetch(`${config.API_URL}/tasks/dates?user_id=${userId}`, {
+          const personalResponse = await fetch(`${config.API_URL}/tasks/user/${userId}`, {
           method: 'GET',
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -51,7 +51,7 @@ const CalendarScreen = () => {
         if (!personalResponse.ok) throw new Error('Failed to fetch personal tasks');
     
         const rawPersonalTasks = await personalResponse.json();
-        const personalTasks = rawPersonalTasks.filter(task => String(task.user_id) === String(userId));
+        const personalTasks = rawPersonalTasks;
         console.log('Fetched Personal Tasks:', personalTasks);
     
         let groupEvents = {};
@@ -71,7 +71,7 @@ const CalendarScreen = () => {
     
             groupTasks.forEach((task) => {
               // Adjust Due Date to Local Time
-              const dueDate = new Date(task.due_date);
+              const dueDate = new Date(task.due_date.replace(' ', 'T'));
               dueDate.setMinutes(dueDate.getMinutes() - dueDate.getTimezoneOffset()); // Corrects any offset issues
               const formattedDueDate = dueDate.toISOString().split('T')[0];
     
@@ -103,7 +103,7 @@ const CalendarScreen = () => {
     
         // Merge Personal and Group Tasks
         const combinedEvents = personalTasks.reduce((acc, task) => {
-          const dueDate = new Date(task.due_date);
+          const dueDate = new Date(task.due_date.replace(' ', 'T'));
           dueDate.setMinutes(dueDate.getMinutes() - dueDate.getTimezoneOffset());
           const formattedDueDate = dueDate.toISOString().split('T')[0];
     
@@ -149,7 +149,7 @@ const CalendarScreen = () => {
     };
 
     fetchTasks();
-  }, [userId, token, userGroups]);
+  }, [userId, token, userGroups]));
 
   const formatDateHeader = (dateString) => {
     const date = new Date(dateString);

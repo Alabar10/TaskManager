@@ -78,41 +78,49 @@ const AddGroupTask = ({ navigation }) => {
     return new Date(date).toLocaleDateString();
   };
 
-  const fetchEstimatedTime = async (selectedPriority, selectedCategory = category) => {
-    setEstimatedTime(null);
-    setEstimatedCompletion(null);
-  
-    if (!selectedPriority || !startTime || !deadline || !selectedCategory) {
-      Alert.alert("Error", "Please select priority, category, and deadline first.");
-      return;
-    }
-  
-    const priorityNumber = priorityMap[selectedPriority];
-    const startTimeISO = new Date(startTime).toISOString();
-    const deadlineISO = new Date(deadline).toISOString();
-  
-    const requestData = {
-      category: selectedCategory,
-      priority: priorityNumber,
-      estimated_time: estimatedTime && estimatedTime > 0 ? estimatedTime : 60,
-      start_time: startTimeISO,
-      deadline: deadlineISO,
-    };
-  
-    try {
-      const response = await axios.post(`${config.API_URL}/predict`, requestData);
-      if (response.data.predicted_time_minutes) {
-        setEstimatedTime(response.data.predicted_time_minutes);
-        const predictedCompletion = new Date(
-          new Date(startTime).getTime() + response.data.predicted_time_minutes * 60000
-        );
-        setEstimatedCompletion(predictedCompletion.toLocaleString());
-      }
-    } catch (error) {
-      console.error("Error fetching estimated time:", error);
-      Alert.alert('Error', 'Failed to fetch estimated time.');
-    }
+const fetchEstimatedTime = async (selectedPriority, selectedCategory = category, userIdParam = null) => {
+  setEstimatedTime(null);
+  setEstimatedCompletion(null);
+
+  if (!selectedPriority || !startTime || !deadline || !selectedCategory) {
+    Alert.alert("Error", "Please select priority, category, and deadline first.");
+    return;
+  }
+
+  const userId = userIdParam || await AsyncStorage.getItem("userId"); // Use passed value or fallback
+
+  const priorityNumber = priorityMap[selectedPriority];
+  const startTimeISO = new Date(startTime).toISOString();
+  const deadlineISO = new Date(deadline).toISOString();
+
+  const requestData = {
+    category: selectedCategory,
+    priority: priorityNumber,
+    estimated_time: estimatedTime && estimatedTime > 0 ? estimatedTime : 60,
+    start_time: startTimeISO,
+    deadline: deadlineISO,
+    user_id: parseInt(userId), // ✅ Final fix
   };
+
+  console.log("📤 Predict Payload:", requestData); // Debug log
+
+  try {
+    const response = await axios.post(`${config.API_URL}/predict`, requestData);
+    if (response.data.predicted_time_minutes) {
+      setEstimatedTime(response.data.predicted_time_minutes);
+      const predictedCompletion = new Date(
+        new Date(startTime).getTime() + response.data.predicted_time_minutes * 60000
+      );
+      setEstimatedCompletion(predictedCompletion.toLocaleString());
+    }
+  } catch (error) {
+    console.error("Error fetching estimated time:", error.response?.data || error.message);
+    Alert.alert('Error', 'Failed to fetch estimated time.');
+  }
+};
+
+
+
   
 
   const handleCreateGroupTask = async () => {
@@ -300,11 +308,13 @@ const AddGroupTask = ({ navigation }) => {
                 <TouchableOpacity
                   key={`priority-${i}`}
                   style={styles.option}
-                  onPress={() => {
+                  onPress={async () => {
                     setPriority(option);
-                    fetchEstimatedTime(option);
+                    const userId = await AsyncStorage.getItem("userId");
+                    await fetchEstimatedTime(option, category, userId); // Pass it in
                     setShowPriorityDropdown(false);
                   }}
+
                 >
                   <Text style={styles.optionText}>{option}</Text>
                 </TouchableOpacity>
@@ -347,11 +357,13 @@ const AddGroupTask = ({ navigation }) => {
                 <TouchableOpacity
                   key={`category-${index}`}
                   style={styles.option}
-                  onPress={() => {
+                  onPress={async () => {
                     setCategory(option);
-                    fetchEstimatedTime(priority, option);
+                    const userId = await AsyncStorage.getItem("userId");
+                    await fetchEstimatedTime(priority, option, userId); // Pass user ID
                     setShowCategoryDropdown(false);
                   }}
+
                 >
                   <Text style={styles.optionText}>{option}</Text>
                 </TouchableOpacity>

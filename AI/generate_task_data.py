@@ -1,54 +1,42 @@
+import os
+import numpy as np
 import pandas as pd
-import random
-from datetime import datetime, timedelta
+from flask import Flask, request, jsonify
+from tensorflow import keras
+import joblib
+from datetime import datetime
 
-# Define table structure
-columns = [
-    "id", "title", "description", "due_date", "deadline", "priority", "status", "user_id",
-    "created_at", "updated_at", "category", "actual_time", "time_taken", "start_time", "estimated_time"
-]
+app = Flask(__name__)
 
-# Sample categories
-categories = ["coding", "writing", "reading", "exercising", "General", "meeting", "designing"]
+# ✅ Use relative paths based on script's location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(BASE_DIR, "task_prediction_model.keras")
+category_encoder_path = os.path.join(BASE_DIR, "category_encoder.pkl")
+feature_scaler_path = os.path.join(BASE_DIR, "feature_scaler.pkl")
+time_scaler_path = os.path.join(BASE_DIR, "time_scaler.pkl")
+user_encoder_path = os.path.join(BASE_DIR, "user_encoder.pkl")
 
-# Sample statuses
-statuses = ["To Do", "In Progress", "Done", "Completed"]
+# ✅ Load model and encoders
+print("📌 Checking AI Model and Encoders Before Loading...")
 
-# Generate realistic task data
-task_data = []
-for i in range(36, 51):  # Generating 15 tasks
-    title = f"Task {i}"
-    description = f"Description for {title}."
-    user_id = random.randint(1, 3)  # Assume 3 users
-    category = random.choice(categories)
-    priority = random.randint(1, 3)
-    status = random.choice(statuses)
+print("🔄 Loading AI model...")
+model = keras.models.load_model(model_path)
+print("✅ Model loaded successfully!")
 
-    # Generate timestamps
-    created_at = datetime(2025, 3, random.randint(1, 18), random.randint(8, 20), random.randint(0, 59))
-    due_date = created_at + timedelta(days=random.randint(1, 15))
-    deadline = due_date + timedelta(days=random.randint(1, 10))
-    updated_at = created_at + timedelta(days=random.randint(1, 5))
+print("🔄 Loading category encoder...")
+category_encoder = joblib.load(category_encoder_path)
+print("✅ Category Encoder Loaded!")
 
-    # Generate start and completion times
-    start_time = created_at + timedelta(hours=random.randint(0, 48))
-    actual_time = start_time + timedelta(hours=random.randint(1, 100))
-    time_taken = f"{(actual_time - start_time).days * 24 + (actual_time - start_time).seconds // 3600} hours, {(actual_time - start_time).seconds // 60 % 60} minutes"
+print("🔄 Loading feature scaler...")
+feature_scaler = joblib.load(feature_scaler_path)
+print(f"✅ Feature Scaler Loaded! Expected Features: {len(feature_scaler.mean_)}")
 
-    # Estimated time (random values)
-    estimated_time = random.randint(30, 6000)  # Estimated in minutes
+print("🔄 Loading time scaler...")
+time_scaler = joblib.load(time_scaler_path)
+print("✅ Time Scaler Loaded!")
 
-    # Handle tasks not completed yet
-    if status in ["To Do", "In Progress"]:
-        actual_time, time_taken, start_time = None, None, None
+print("🔄 Loading user encoder...")
+user_encoder = joblib.load(user_encoder_path)
+print("✅ User Encoder Loaded!")
 
-    task_data.append([i, title, description, due_date, deadline, priority, status, user_id,
-                      created_at, updated_at, category, actual_time, time_taken, start_time, estimated_time])
-
-# Convert to DataFrame
-df_tasks = pd.DataFrame(task_data, columns=columns)
-
-# Save to CSV
-df_tasks.to_csv("task_data.csv", index=False)
-
-print("✅ Task data generated and saved as 'task_data.csv'.")
+print("✅ AI Model and Encoders Loaded Successfully!")

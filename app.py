@@ -34,6 +34,8 @@ import random
 from datetime import datetime, timedelta
 from random import randint
 from flask import current_app
+from datetime import datetime
+from dateutil.parser import parse as parse_datetime
 
 
 
@@ -121,6 +123,24 @@ def create_app():
         print("🔄 Loading time scaler...")
         time_scaler = joblib.load(time_scaler_path)
         print(f"✅ Time Scaler Loaded!")
+
+        # ✅ Load User Encoder
+        print("🔄 Loading user encoder...")
+        user_encoder_path = "AI/user_encoder.pkl"
+        user_encoder = joblib.load(user_encoder_path)
+        print("✅ User Encoder Loaded!")
+
+        # ✅ Load seen user IDs (optional but helpful for fallback)
+        seen_users_path = "AI/seen_user_ids.pkl"
+        if os.path.exists(seen_users_path):
+            seen_user_ids = joblib.load(seen_users_path)
+            print(f"👥 Loaded known user IDs: {seen_user_ids}")
+        else:
+            seen_user_ids = [-1]  # fallback if file missing
+
+        # ✅ Store in app config
+        app.config["USER_ENCODER"] = user_encoder
+        app.config["SEEN_USER_IDS"] = seen_user_ids
 
         # ✅ Store AI components in Flask app config
         app.config["MODEL"] = model
@@ -1335,8 +1355,8 @@ def routes(app):
     @jwt_required()
     def remove_group_member(group_id, user_id):
         """
-        Remove a user from a group.
-        Only the group creator can remove members.
+        Allow group creator to remove any member,
+        and allow any user to remove themselves (leave group).
         """
         try:
             requester_id = int(get_jwt_identity())
@@ -1345,9 +1365,11 @@ def routes(app):
             if not group:
                 return jsonify({"message": "Group not found"}), 404
 
-            if requester_id != group.created_by:
-                return jsonify({"message": "Only the group creator can remove members"}), 403
+            # 🔐 Only allow if requester is group creator or the user removing themselves
+            if requester_id != group.created_by and requester_id != user_id:
+                return jsonify({"message": "Not authorized to remove this member"}), 403
 
+            # 🚫 Prevent group creator from being removed
             if user_id == group.created_by:
                 return jsonify({"message": "Group creator cannot be removed"}), 400
 
@@ -1363,7 +1385,7 @@ def routes(app):
         except Exception as e:
             db.session.rollback()
             return jsonify({"message": f"Failed to remove member: {str(e)}"}), 500
-        
+
 
  # ============================= 📌 Data API Endpoint ============================= #
 
@@ -1491,7 +1513,6 @@ def routes(app):
         
     from flask import jsonify, request
     from sqlalchemy import func
-    from datetime import datetime
     from models import GroupMessageRead, GroupMessage  # Import your models
 
     # ✅ Check if user has unread messages in a group
@@ -1555,6 +1576,16 @@ def routes(app):
  # ============================= 📌 AI Prediction API Endpoint ============================= #
     
    
+    def get_user_specific_data(user_id, category, df):
+        user_data = df[(df["user_id"] == user_id) & (df["category"] == category)]
+        if not user_data.empty:
+            return user_data, f"🔍 Using personal history for user {user_id} in category '{category}'"
+        
+        category_data = df[df["category"] == category]
+        if not category_data.empty:
+            return category_data, f"🧩 No personal data, using general data for category '{category}'"
+
+        return df, "⚠️ No category-specific data, using all available history"
 
 
     @app.route("/predict", methods=["POST"])
@@ -1566,56 +1597,76 @@ def routes(app):
             model = app.config.get("MODEL")
             category_encoder = app.config.get("CATEGORY_ENCODER")
             feature_scaler = app.config.get("FEATURE_SCALER")
-            time_scaler = app.config.get("TIME_SCALER")  # NEW: Get the time scaler
+            time_scaler = app.config.get("TIME_SCALER")
+            user_encoder = app.config.get("USER_ENCODER")
 
-            if not all([model, category_encoder, feature_scaler, time_scaler]):
+            if not all([model, category_encoder, feature_scaler, time_scaler, user_encoder]):
                 return jsonify({"error": "Model or encoders are not loaded properly."}), 500
 
+            # Extract inputs
             category = data.get("category")
             priority = data.get("priority")
             estimated_time = data.get("estimated_time")
             start_time = data.get("start_time")
             deadline = data.get("deadline")
+            user_id = data.get("user_id")
 
-            if not all([category, priority, estimated_time, start_time]):
-                return jsonify({"error": "Missing required fields: category, priority, estimated_time, start_time"}), 400
+            if not all([category, priority, estimated_time, start_time, user_id]):
+                return jsonify({"error": "Missing required fields: category, priority, estimated_time, start_time, user_id"}), 400
 
             try:
                 priority = int(priority)
                 estimated_time = float(estimated_time)
-                start_time_dt = pd.to_datetime(start_time)
-                start_time_hour = int(start_time_dt.hour)
-                deadline_dt = pd.to_datetime(deadline) if deadline else None
-            except ValueError:
-                return jsonify({"error": "Invalid data type for priority, estimated_time, or start_time"}), 400
+                start_dt = parse_datetime(start_time)
+                start_time_hour = start_dt.hour
+                deadline_dt = parse_datetime(deadline) if deadline else None
+            except Exception as e:
+                return jsonify({"error": f"Invalid datetime format: {str(e)}"}), 400
 
             available_time = None
             if deadline_dt:
-                available_time = (deadline_dt - start_time_dt).total_seconds() / 60  # minutes
+                available_time = (deadline_dt - start_dt).total_seconds() / 60
                 print(f"🕒 Available Time Before Deadline: {available_time:.2f} minutes")
 
+            # Handle unknown category
             if category not in category_encoder.classes_:
                 print(f"⚠️ Unknown category: {category}. Defaulting to 'General'")
                 category = "General"
 
             category_encoded = int(category_encoder.transform([category])[0])
-            input_data = np.array([[category_encoded, priority, estimated_time, start_time_hour]], dtype=np.float32)
-            input_df = pd.DataFrame(input_data, columns=["category_encoded", "priority", "estimated_time", "start_time_hour"])
 
-            # Scale the input features
-            scaled_input = feature_scaler.transform(input_df)
+            # Handle unknown user
+            completed_tasks_count = PersonalTask.query.filter_by(user_id=user_id, status='Done').count()
+            if completed_tasks_count == 0 or user_id not in user_encoder.classes_:
+                print(f"⚠️ Using fallback user (-1) for user {user_id}")
+                user_encoded = user_encoder.transform([-1])[0]
+                used_fallback = True
+            else:
+                user_encoded = user_encoder.transform([user_id])[0]
+                used_fallback = False
+
+            # Prepare input
+            input_data = pd.DataFrame([[
+                category_encoded,
+                priority,
+                estimated_time,
+                start_time_hour,
+                user_encoded
+            ]], columns=["category_encoded", "priority", "estimated_time", "start_time_hour", "user_encoded"])
+
+            scaled_input = feature_scaler.transform(input_data)
             predicted_scaled = model.predict(scaled_input)[0][0]
             print(f"🔎 Model raw output (scaled): {predicted_scaled}")
 
-            # ----- NEW: Inverse transform the predicted value -----
-            predicted_time = time_scaler.inverse_transform(np.array([[predicted_scaled]]))[0][0]
-            # -------------------------------------------------------
+            predicted_time = time_scaler.inverse_transform([[predicted_scaled]])[0][0]
 
+            # Sanity check
             if np.isnan(predicted_time) or np.isinf(predicted_time) or predicted_time <= 1:
                 print("❌ Invalid prediction, defaulting to 120 minutes")
                 predicted_time = 120
 
-            predicted_time = max(10, min(float(predicted_time), 480))
+            available_minutes = (deadline_dt - start_dt).total_seconds() / 60 if deadline_dt else 480
+            predicted_time = max(10, min(float(predicted_time), available_minutes, 480))  # Clamp
             print(f"✅ Final Predicted Time (Minutes): {predicted_time}")
 
             adjusted_due_to_urgency = False
@@ -1626,13 +1677,13 @@ def routes(app):
             return jsonify({
                 "predicted_time_minutes": round(predicted_time, 2),
                 "predicted_time_hours": round(predicted_time / 60, 2),
-                "adjusted_due_to_urgency": adjusted_due_to_urgency
+                "adjusted_due_to_urgency": adjusted_due_to_urgency,
+                "used_fallback": used_fallback
             })
 
         except Exception as e:
             print(f"❌ Prediction error: {e}")
             return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
-
 
     @app.route("/ai/generate-schedule", methods=["POST"])
     def generate_schedule():
