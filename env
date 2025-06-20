@@ -1,0 +1,16 @@
+FLASK_APP_SECRET_KEY=your_random_secret_key
+JWT_SECRET_KEY=another_random_secret_key
+DB_CONNECTION_STRING=DRIVER={ODBC Driver 17 for SQL Server};SERVER=takmanager.database.windows.net;DATABASE=TaskManager;UID=database;PWD=task1234!
+SQLALCHEMY_DATABASE_URI=mssql+pyodbc://database:task1234!@takmanager.database.windows.net:1433/TaskManager?driver=ODBC+Driver+17+for+SQL+Server
+REACT_APP_API_URL=http://192.168.1.159:5000/
+FLASK_ENV=production
+HF_API_KEY=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
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=alabrgita10@gmail.com
+MAIL_PASSWORD=jfrzlkqgbjoxaefa
+MAIL_USE_TLS=True
+MAIL_USE_SSL=False
+JIRA_API_TOKEN=ATATT3xFfGF02urAKkQKBKoV65JauMnDwLyGChqNetI3iT-EPR5NAhBZel3jqLplCKPFNf2zYIpzf7VtwWwEtlrWZs-YpaKVedvaneRBlFJ7zvK8oBeAKtgtPtbwcJPlHgPLoPHlaYpga43wAsMau8hX4gSiXJfaMKBdLvPe-xj_9JIKa_Vace0=B97A1A55
+JIRA_EMAIL=alabrgita10@gmail.com       # ← use the same email you use to log in to JIRA
+JIRA_DOMAIN=alabrgita10-1748354567678.atlassian.net
