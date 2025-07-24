@@ -22,7 +22,7 @@ const GroupTasksScreen = () => {
 
   const fetchGroupData = async () => {
     try {
-      setRefreshing(true); // ✅ Start refreshing
+      setRefreshing(true); 
       setIsLoading(true);
 
       const userId = await AsyncStorage.getItem("userId");
@@ -332,7 +332,7 @@ useEffect(() => {
                     style={[styles.fabMenuItem, { bottom: 260 }]}
                     onPress={handleDistributeTasks}
                   >
-                    <Text style={styles.fabText}>🤖 AI Distribute</Text>
+                    <Text style={styles.fabText}>🤖 Smart Distribute</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
