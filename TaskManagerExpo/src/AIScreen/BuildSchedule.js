@@ -78,11 +78,11 @@ const BuildSchedule = () => {
         // ✅ 7. Initialize task hours
         const initialHours = {};
         [...personalTasks, ...groupTasks].forEach(task => {
-          initialHours[task.id] = "1";
+          initialHours[task.id] = "0";
         });
         setTaskHours(initialHours);
   
-        // 🕒 8. Fetch user availability
+        //  8. Fetch user availability
         const scheduleResponse = await axios.get(`${config.API_URL}/schedule/${userId}`);
         if (scheduleResponse.data.message?.includes("No schedule found")) {
           setWarningMessage("Please set your availability first");
@@ -291,6 +291,7 @@ const BuildSchedule = () => {
                       onChangeText={(text) => handleHourChange(task.id, text)}
                       placeholder="Hours"
                       maxLength={2}
+                      selectTextOnFocus={true}
                     />
                   </View>
                 ))}
@@ -313,6 +314,7 @@ const BuildSchedule = () => {
                       onChangeText={(text) => handleHourChange(task.id, text)}
                       placeholder="Hours"
                       maxLength={2}
+                      selectTextOnFocus={true}
                     />
                   </View>
                 ))}

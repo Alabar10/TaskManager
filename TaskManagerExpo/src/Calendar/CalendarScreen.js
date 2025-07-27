@@ -19,7 +19,8 @@ const CalendarScreen = () => {
       if (!userId || !token) return;
       const fetchUserGroups = async () => {
         try {
-          const response = await fetch(`${config.API_URL}/groups?created_by=${userId}`, {
+          const response = await fetch(`${config.API_URL}/groups/user/${userId}`, {
+
             method: 'GET',
             headers: { Authorization: `Bearer ${token}` },
           });

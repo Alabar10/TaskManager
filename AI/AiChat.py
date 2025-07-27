@@ -2,223 +2,234 @@ import requests
 import json
 import os
 import re
-from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 from pytz import timezone
+from dotenv import load_dotenv
 
 load_dotenv()
 
-HF_TOKEN = os.getenv("HF_API_KEY")
-MODEL_ID = "HuggingFaceH4/zephyr-7b-beta"
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
+TOGETHER_MODEL = "mistralai/Mistral-7B-Instruct-v0.1"
 
 headers = {
-    "Authorization": f"Bearer {HF_TOKEN}",
+    "Authorization": f"Bearer {TOGETHER_API_KEY}",
     "Content-Type": "application/json"
 }
 
+# ---------- Query Type Helpers ----------
 def is_small_talk(text):
     cleaned = re.sub(r'[^\w\s]', '', text.lower().strip())
-    phrases = [
+    return cleaned in [
         "hi", "hello", "hey", "how are you", "whats up", "yo",
         "any advice", "any tips", "help", "motivation", "can you help",
         "some advice", "anything to suggest"
     ]
-    return cleaned in phrases
 
-def is_urgent_query(message):
-    # Add more if needed
-    queries = [
-        "urgent", "priority", "what is urgent", "what's urgent",
-        "most important", "what should i do first", "what should i focus",
-        "next", "which task is urgent", "urgent task", "due soon",
-        "deadline", "what should i do now", "which group task is urgent"
+def is_urgent_query(msg):
+    keywords = [
+        "urgent", "priority", "what is urgent", "what's urgent", "most important",
+        "what should i do first", "what should i focus", "next", "urgent task",
+        "due soon", "deadline", "what should i do now", "which group task is urgent"
     ]
-    msg = message.lower()
-    return any(q in msg for q in queries)
+    return any(k in msg.lower() for k in keywords)
+
+def is_time_query(text):
+    return any(p in text.lower() for p in [
+        "what time is it", "current time", "now time", "tell me the time",
+        "what's the time", "what is the time", "what day is it", "date today", "today's date"
+    ])
+
+def is_status_query(msg):
+    return any(s in msg.lower() for s in ["to do", "in progress", "done", "completed", "not started"])
+
+def is_personal_task_query(msg):
+    msg = msg.lower()
+    return ("personal task" in msg or 
+            "my task" in msg or 
+            "personal to do" in msg or
+            "my to do" in msg)
+
+def is_group_task_query(msg):
+    msg = msg.lower()
+    return ("group task" in msg or 
+            "team task" in msg or 
+            "group to do" in msg or
+            "team to do" in msg)
+
+def extract_requested_status(msg):
+    msg = msg.lower()
+    if "in progress" in msg: return "in progress"
+    if "to do" in msg or "todo" in msg: return "to do"
+    if "done" in msg or "completed" in msg: return "completed"
+    if "not started" in msg: return "not started"
+    return None
+
+# ---------- Task Formatters ----------
+def parse_deadline(deadline_str):
+    formats = [
+        '%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%d %H:%M:%S.%f',
+        '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d'
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(deadline_str, fmt)
+        except:
+            continue
+    return None
 
 def format_due_date(task):
-    deadline_str = task.get('deadline')
-    if not deadline_str:
-        return None
-    try:
-        deadline = datetime.strptime(deadline_str, '%Y-%m-%dT%H:%M:%S.%fZ')
-        now = datetime.utcnow()
-        delta = deadline - now
-        if delta.total_seconds() < 0:
-            return None
-        elif delta.days == 0:
-            return f"{task['title']} — due today"
-        elif delta.days == 1:
-            return f"{task['title']} — due tomorrow"
-        else:
-            return f"{task['title']} — due in {delta.days} days"
-    except Exception:
-        return None
+    deadline = parse_deadline(task.get('deadline', ''))
+    if not deadline:
+        return "No deadline"
+    now = datetime.utcnow()
+    delta = deadline - now
+    if delta.total_seconds() < 0:
+        return "overdue"
+    elif delta.days == 0:
+        return "due today"
+    elif delta.days == 1:
+        return "due tomorrow"
+    else:
+        return f"due in {delta.days} days"
 
-def find_most_urgent(tasks):
-    # Filter for tasks with valid deadline and not completed
-    future_tasks = [
-        t for t in tasks
-        if t.get("status") not in ("completed", "done")
-        and t.get("deadline")
-    ]
-    if not future_tasks:
-        return None
-    # Sort by deadline (soonest), then by priority if available
-    def task_sort_key(t):
-        try:
-            dt = datetime.strptime(t['deadline'], '%Y-%m-%dT%H:%M:%S.%fZ')
-        except Exception:
-            dt = datetime.max
-        priority = t.get('priority', 999)
-        return (dt, priority)
-    urgent = sorted(future_tasks, key=task_sort_key)
-    return urgent[0] if urgent else None
+def priority_label(priority):
+    labels = {
+        1: "Important and Urgent",
+        2: "Important but Not Urgent",
+        3: "Not Important but Urgent",
+        4: "Not Important and Not Urgent"
+    }
+    try:
+        return labels.get(int(priority), f"Priority {priority}")
+    except:
+        return f"Priority {priority}"
 
 def summarize_task(task):
-    deadline_msg = format_due_date(task) or "No deadline"
-    prio = f"Priority: {task.get('priority')}" if task.get('priority') else ""
-    return f"{task.get('title', 'Unnamed Task')} ({deadline_msg}) {prio}".strip()
+    title = task.get('title', 'Unnamed Task')
+    deadline_msg = format_due_date(task)
+    prio = priority_label(task.get('priority'))
+    return f"{title} — {deadline_msg} | {prio}"
 
+# ---------- Urgent Task Logic ----------
+def find_most_urgent(tasks):
+    future_tasks = [t for t in tasks if t.get("status", "").lower() not in ("completed", "done") and t.get("deadline")]
+    if not future_tasks:
+        return None
+    return sorted(future_tasks, key=lambda t: (
+        parse_deadline(t.get("deadline")) or datetime.max,
+        int(t.get("priority", 999))
+    ))[0]
+
+# ---------- Main AI Generator ----------
 def generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urgent_tasks, user_name="there"):
-    if not HF_TOKEN:
-        return "❌ Missing Hugging Face API token. Check your .env setup."
-    
-    # Filter tasks (not completed)
-    personal_tasks = [t for t in personal_tasks if t.get('status') not in ("completed", "done")]
-    group_tasks = [t for t in group_tasks if t.get('status') not in ("completed", "done")]
-    urgent_tasks = [t for t in urgent_tasks if t.get('status') not in ("completed", "done")]
+    if not TOGETHER_API_KEY:
+        return "❌ Missing Together.ai API key."
 
-    today = datetime.now(timezone('Asia/Jerusalem'))
-    formatted_date = today.strftime("%A, %B %d, %Y")
-    part_of_day = "morning" if today.hour < 12 else "afternoon" if today.hour < 17 else "evening"
+    # Filter out completed tasks
+    personal_tasks = [t for t in personal_tasks if t.get('status', '').lower() not in ("completed", "done")]
+    group_tasks = [t for t in group_tasks if t.get('status', '').lower() not in ("completed", "done")]
+    urgent_tasks = [t for t in urgent_tasks if t.get('status', '').lower() not in ("completed", "done")]
 
-    # 1. Urgency queries
-    if is_urgent_query(message):
-        all_tasks = personal_tasks + group_tasks + urgent_tasks
-        urgent_task = find_most_urgent(all_tasks)
-        if urgent_task:
-            summary = summarize_task(urgent_task)
-            prompt = f"""
-You are FocusMate, an empathetic productivity coach.  
-Answer the user’s question as a supportive human assistant.
+    now = datetime.now(timezone("Asia/Jerusalem"))
+    date_str = now.strftime("%A, %B %d, %Y")
+    time_str = now.strftime("%H:%M")
+    part_of_day = "morning" if now.hour < 12 else "afternoon" if now.hour < 17 else "evening"
 
-Today is {formatted_date} ({part_of_day}).
+    # --- Message Type Routing ---
+    if is_status_query(message):
+        status = extract_requested_status(message)
+        if not status:
+            return "I couldn't determine which task status you meant."
 
-Identify the single most urgent task for the user, explain *briefly* why it's urgent, and suggest a clear next step.  
-Be warm, not robotic. Encourage the user to take action.
+        match = lambda t: t.get("status", "").lower() == status
+        
+        # Check if specifically asking for personal or group tasks
+        if is_personal_task_query(message):
+            tasks = [summarize_task(t) for t in personal_tasks if match(t)]
+            if not tasks:
+                return f"You have no personal tasks with status '{status}'."
+            return f"Here are your personal tasks with status **{status}**:\n" + "\n".join(f"- {t}" for t in tasks)
+        
+        elif is_group_task_query(message):
+            tasks = [summarize_task(t) for t in group_tasks if match(t)]
+            if not tasks:
+                return f"You have no group tasks with status '{status}'."
+            return f"Here are your group tasks with status **{status}**:\n" + "\n".join(f"- {t}" for t in tasks)
+        
+        else:  # Show both if not specified
+            personal = [summarize_task(t) for t in personal_tasks if match(t)]
+            group = [summarize_task(t) for t in group_tasks if match(t)]
 
-Most urgent task: {summary}
+            if not personal and not group:
+                return f"You have no tasks with status '{status}'."
 
-Reply in less than 60 words. Do not repeat the user's question or message.
-            """
+            response = f"Here are your tasks with status **{status}**:\n"
+            if personal:
+                response += "\n🟢 *Personal Tasks:*\n" + "\n".join(f"- {t}" for t in personal)
+            if group:
+                response += "\n🔵 *Group Tasks:*\n" + "\n".join(f"- {t}" for t in group)
+            return response
+
+    elif is_urgent_query(message):
+        urgent = find_most_urgent(personal_tasks + group_tasks + urgent_tasks)
+        if urgent:
+            summary = summarize_task(urgent)
+            prompt = f"""You are FocusMate. Today is {date_str} ({part_of_day}).
+Suggest a next step based on the most urgent task:
+{summary}"""
         else:
-            prompt = f"""
-You are FocusMate, a supportive productivity coach.  
-Answer the user’s question as a helpful assistant.
+            prompt = f"""You are FocusMate. Today is {date_str}.
+There are no urgent tasks. Encourage the user to review priorities or take a short productive action."""
 
-Today is {formatted_date}.
+    elif is_time_query(message):
+        prompt = f"""It's {time_str} on {date_str} (Asia/Jerusalem).
+Give the user this info and one motivational tip to stay productive."""
 
-You checked all current tasks and found none that are urgent right now.  
-Reassure the user, suggest reviewing priorities or planning ahead, and encourage them to stay positive.
-
-Do not repeat the user's question or message.
-            """
-
-    # 2. Small talk
     elif is_small_talk(message):
-        prompt = f"""
-You are FocusMate, a friendly productivity assistant.
+        prompt = f"""It's the {part_of_day} on {date_str}.
+Greet {user_name} warmly. Offer two productivity tips like Pomodoro or task batching."""
 
-It's the {part_of_day} on {formatted_date}.
+    elif is_group_task_query(message):
+        deadlines = "\n".join(f"- {summarize_task(t)}" for t in group_tasks) or "No group tasks."
+        prompt = f"""Today is {date_str} ({part_of_day}).
+Here are your group tasks:
+{deadlines}
+Suggest a useful action to move one of them forward."""
 
-Greet {user_name} with positive energy, and give one or two practical tips for focus or motivation (e.g., 5-minute rule, Pomodoro, etc).  
-Keep it casual, never list tasks, and never repeat the user's message.
-        """
+    elif is_personal_task_query(message):
+        deadlines = "\n".join(f"- {summarize_task(t)}" for t in personal_tasks) or "No personal tasks."
+        prompt = f"""Today is {date_str} ({part_of_day}).
+Here are your personal tasks:
+{deadlines}
+Suggest what to focus on next."""
 
-    # 3. Group task questions
-    elif "group task" in message.lower():
-        upcoming = sorted(
-            [format_due_date(t) for t in group_tasks if t.get('deadline')],
-            key=lambda x: x if x else '',
-        )
-        group_deadlines = "\n".join(f"- {x}" for x in upcoming if x) or "No group tasks with upcoming deadlines."
-        prompt = f"""
-You are FocusMate, a smart productivity coach.
-
-Today is {formatted_date} ({part_of_day}).
-
-Share the most important upcoming group deadlines, and suggest one step the user can take to move forward.  
-Be practical, friendly, and never repeat the user's question or message.
-
-Upcoming group deadlines:
-{group_deadlines}
-        """
-
-    # 4. General planning/advice
     else:
-        personal_summary = "\n".join([
-            f"- {summarize_task(t)}" for t in personal_tasks
-        ]) or "No personal tasks."
-        group_summary = "\n".join([
-            f"- {summarize_task(t)}" for t in group_tasks
-        ]) or "No group tasks."
-        urgent_summary = "\n".join([
-            f"- {summarize_task(t)}" for t in urgent_tasks
-        ]) or "None."
-
         schedule_note = json.dumps(schedule_json, indent=2) if schedule_json else "No schedule available."
+        personal_summary = "\n".join(f"- {summarize_task(t)}" for t in personal_tasks) or "No personal tasks."
+        group_summary = "\n".join(f"- {summarize_task(t)}" for t in group_tasks) or "No group tasks."
+        urgent_summary = "\n".join(f"- {summarize_task(t)}" for t in urgent_tasks) or "None."
 
-        prompt = f"""
-You are FocusMate, a smart, supportive productivity coach.
+        prompt = f"""Today is {date_str} ({part_of_day}).
+Schedule: {schedule_note}
+🟢 Personal Tasks:\n{personal_summary}
+🔵 Group Tasks:\n{group_summary}
+❗ Urgent Tasks:\n{urgent_summary}
+Give clear, actionable planning advice. Suggest one next step."""
 
-Today is {formatted_date} ({part_of_day}).
-
-Weekly Schedule: {schedule_note}
-
-Personal Tasks:
-{personal_summary}
-
-Group Tasks:
-{group_summary}
-
-Urgent Tasks:
-{urgent_summary}
-
-Give concise, realistic planning advice for what the user should do next.  
-Encourage them to take one step at a time and finish with a positive note.  
-Never repeat the user's message.
-        """
-
-    # Send to Hugging Face
     payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 120,
-            "temperature": 0.7,
-            "top_k": 40,
-            "top_p": 0.92,
-            "do_sample": True,
-            "return_full_text": False
-        }
+        "model": TOGETHER_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are FocusMate, a helpful productivity coach."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 200,
+        "temperature": 0.7,
+        "top_p": 0.9
     }
 
     try:
-        response = requests.post(
-            f"https://api-inference.huggingface.co/models/{MODEL_ID}",
-            headers=headers,
-            data=json.dumps(payload)
-        )
-
-        if response.status_code == 503:
-            return "⏳ The model is still loading. Please try again in a moment."
-
-        if response.status_code == 200:
-            result = response.json()
-            generated = result[0].get('generated_text') or result[0].get('text')
-            return generated.strip() if generated else "⚠️ AI responded, but gave no content."
-        else:
-            error_message = response.json().get("error", "Unknown error")
-            return f"❌ Hugging Face Error: {error_message}"
+        res = requests.post("https://api.together.xyz/v1/chat/completions", headers=headers, json=payload)
+        res.raise_for_status()
+        return res.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        return f"❌ Exception occurred: {str(e)}"
+        return f"❌ Together.ai error: {e}" 

@@ -599,7 +599,6 @@ def routes(app):
         if not group:
             return jsonify({"message": "Group not found."}), 404
 
-        # ✅ Find the specific task within the group
         task = next((task for task in group.tasks if task.id == task_id), None)
 
         if not task:
@@ -631,6 +630,12 @@ def routes(app):
                     task_user_association.delete().where(task_user_association.c.task_id.in_(task_ids))
                 )
 
+            print("🔸 Deleting GroupMessageReads...")
+            db.session.query(GroupMessageRead).filter_by(group_id=group_id).delete()
+
+            print("🔸 Deleting GroupMessages...")
+            db.session.query(GroupMessage).filter_by(group_id=group_id).delete()
+
             print("🔸 Deleting group tasks...")
             GroupTask.query.filter_by(group_id=group_id).delete()
 
@@ -646,6 +651,7 @@ def routes(app):
             db.session.commit()
 
             return jsonify({"message": "Group deleted successfully"}), 200
+
 
         except Exception as e:
             db.session.rollback()
@@ -1852,7 +1858,6 @@ def routes(app):
             return jsonify({"error": str(e)}), 500
 
 
-
     @app.route('/chat', methods=['POST'])
     def chat_with_ai():
         # Step 1: Parse incoming data
@@ -1869,27 +1874,25 @@ def routes(app):
             task.to_dict() for task in PersonalTask.query.filter_by(user_id=user_id).all()
         ]
 
-        # Fetch group tasks
+        # Step 4: Fetch group tasks assigned to the user
         group_tasks = [
             task.to_dict()
             for task in GroupTask.query.options(joinedload(GroupTask.assigned_users)).all()
             if any(user.userId == int(user_id) for user in task.assigned_users)
         ]
 
-        # Filter urgent tasks (due within 2 days)
+        # Step 5: Filter urgent tasks (due within 2 days)
         urgent_tasks = [
             t for t in personal_tasks + group_tasks
             if t.get('deadline')
             and datetime.strptime(t['deadline'], "%Y-%m-%d %H:%M:%S") <= datetime.utcnow() + timedelta(days=2)
         ]
 
-
-
-        # Now pass urgent_tasks as an extra parameter
+        # Step 6: Call the AI advice function with proper arguments
         reply = generate_ai_advice(message, schedule_json, personal_tasks, group_tasks, urgent_tasks)
-        return jsonify({"reply": reply})
-    
+        print("AI response:", reply)
 
+        return jsonify({"reply": reply})
 
 
 
