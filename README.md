@@ -12,6 +12,9 @@ This is a fullstack project built with:
 
 TaskManager is a productivity app that helps individuals and teams manage their time effectively. It combines smart scheduling, AI-powered task predictions, and group collaboration tools. Users can plan weekly schedules, estimate task durations, and get personalized advice on task priorities — all in a sleek mobile interface built with Expo and powered by a Flask backend connected to SQL Server.
 
+## video Link For The Project:
+https://drive.google.com/file/d/1k9k6SNJTdw5AbPrLn8ygRQLvg8L6EBQL/view?usp=sharing
+
 ## 🧹 Project Structure
 
 ```bash
