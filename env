@@ -1,1 +1,31 @@
 
+# Flask secret keys
+FLASK_APP_SECRET_KEY=your_random_secret_key_here
+JWT_SECRET_KEY=your_jwt_secret_key_here
+
+# Database configuration (Azure SQL)
+DB_CONNECTION_STRING=DRIVER={ODBC Driver 17 for SQL Server};SERVER=your_server;DATABASE=your_database;UID=your_username;PWD=your_password
+SQLALCHEMY_DATABASE_URI=mssql+pyodbc://username:password@your_server:1433/your_database?driver=ODBC+Driver+17+for+SQL+Server
+
+# Backend & Frontend communication
+REACT_APP_API_URL=http://your-local-ip:5000/
+
+# Flask environment
+FLASK_ENV=production
+
+# API Keys
+HF_API_KEY=your_huggingface_api_key_here
+TOGETHER_API_KEY=your_together_api_key_here
+
+# Email (used for password reset or alerts)
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=your_email@gmail.com
+MAIL_PASSWORD=your_email_app_password
+MAIL_USE_TLS=True
+MAIL_USE_SSL=False
+
+# JIRA Integration
+JIRA_API_TOKEN=your_jira_api_token_here
+JIRA_EMAIL=your_email_used_with_jira
+JIRA_DOMAIN=your-domain.atlassian.net
